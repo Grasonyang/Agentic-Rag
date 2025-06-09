@@ -1,9 +1,11 @@
 import asyncio
 import xml.etree.ElementTree as ET
 from typing import List
-from crawl4ai import BrowserConfig, CrawlerRunConfig, CacheMode, RateLimiter
-from crawl4ai.config import GeolocationConfig
-from crawl4ai.crawlers import AsyncWebCrawler
+from crawl4ai import BrowserConfig, CrawlerRunConfig, CacheMode, RateLimiter,AsyncWebCrawler
+from crawl4ai.markdown_generation_strategy import DefaultMarkdownGenerator
+from crawl4ai.async_dispatcher import MemoryAdaptiveDispatcher
+from crawl4ai import CrawlerMonitor, DisplayMode
+import os
 
 def detect_sitemap_type(xml_text: str) -> str:
     try:
@@ -71,7 +73,7 @@ async def web_crawler(urls: List[str]):
         #     "username": "your_proxy_username",
         #     "password": "your_proxy_password"
         # },
-        use_persistent_context=True,  # 使用持久性瀏覽器配置文件，保留 cookies 和本地儲存
+        use_persistent_context=False,  # 使用持久性瀏覽器配置文件，保留 cookies 和本地儲存
         user_data_dir="./user_data",  # 指定儲存持久性資料的目錄
         # cookies=[{"name": "sessionid", "value": "your_session_id", "domain": ".example.com"}], # 根據網站需求設定初始 cookies
         headers={
@@ -89,6 +91,7 @@ async def web_crawler(urls: List[str]):
         # 內容篩選
         word_count_threshold=10,  # 忽略字數過少的文本區塊
         excluded_tags=['form', 'header'],  # 移除特定 HTML 標籤
+        keep_data_attributes=False,
         exclude_external_links=True,  # 排除外部連結
         # 內容處理
         process_iframes=True,  # 控制是否處理 iframe 內容
@@ -101,29 +104,56 @@ async def web_crawler(urls: List[str]):
         #     "window.scrollTo(0, document.body.scrollHeight);",  # 模擬滾動到底部，觸發惰性載入
         #     "document.querySelector('.load-more-button')?.click();"  # 模擬點擊「載入更多」按鈕 (範例)
         # ],
-        wait_for="js:() => document.readyState === 'complete'",  # 等待頁面完全載入
-        # wait_for="css:.main-content", # 也可以等待特定元素出現
-        # locale="zh-TW",  # 模擬瀏覽器語言環境
-        # timezone_id="Asia/Taipei",  # 模擬瀏覽器時區
-        # geolocation=GeolocationConfig(latitude=24.0776, longitude=120.5658),  # 模擬特定 GPS 座標 (彰化市為例)
-
-        # 請求頻率控制與錯誤處理
-        enable_rate_limiting=True,  # 啟用速率限制
-        rate_limit_config=RateLimiter(
-            base_delay=(2.0, 5.0),  # 請求之間隨機延遲 2 到 5 秒
-            max_delay=60.0,  # 速率限制錯誤時最大延遲 60 秒
-            max_retries=5,  # 速率限制錯誤時最大重試次數 5 次
-            rate_limit_codes=[429, 503] # 預設觸發回退和重試的 HTTP 狀態碼
+        wait_for="js:() => document.readyState === 'complete'",
+        markdown_generator=DefaultMarkdownGenerator(
+            options={"citations": True}  # e.g. pass html2text style options
         ),
+        delay_before_return_html=2.5,# 捕獲 HTML 前額外等待 2.5 秒，確保動態內容渲染
         page_timeout=60000,  # 頁面載入或腳本執行總體時間限制 60 秒
-        delay_before_return_html=2.5,  # 捕獲 HTML 前額外等待 2.5 秒，確保動態內容渲染
-
-        # 併發與資源管理
-        max_session_permit=5,  # 最大並發爬取會話數，根據系統資源和目標網站調整
-        memory_threshold_percent=90.0  # 記憶體使用閾值，防止系統記憶體耗盡
+    )
+    
+    dispatcher = MemoryAdaptiveDispatcher(
+        memory_threshold_percent=90.0,  # Pause if memory exceeds this
+        check_interval=1.0,             # How often to check memory
+        max_session_permit=10,          # Maximum concurrent tasks
+        rate_limiter=RateLimiter(       # Optional rate limiting
+            base_delay=(1.0, 2.0),
+            max_delay=30.0,
+            max_retries=2
+        )
     )
 
-    async with AsyncWebCrawler(browser_config=browser_config, crawler_run_config=run_config) as crawler:
+
+    async with AsyncWebCrawler(config=browser_config) as crawler:
+        i=0
         for url in urls:
-            result = await crawler.arun(url)
+            result = await crawler.arun(
+                url=url,
+                config=run_config,
+                dispatcher=dispatcher
+            )
+            print("HTML")
+            print(result.cleaned_html[:1000])  # 僅打印前 1000 字符以避免過長輸出
+            print("markdown")
+            raw_markdown = result.markdown.raw_markdown
+            markdown_with_citations = result.markdown.markdown_with_citations
+            references_markdown = result.markdown.references_markdown
+            os.makedirs("ex_result", exist_ok=True)
+            with open(f"ex_result/raw_markdown{i}.md", "w", encoding="utf-8") as f:
+                f.write(raw_markdown)
+            with open(f"ex_result/markdown_with_citations{i}.md", "w", encoding="utf-8") as f:
+                f.write(markdown_with_citations)
+            with open(f"ex_result/references_markdown{i}.md", "w", encoding="utf-8") as f:
+                f.write(references_markdown)
+            # print(result.markdown.markdown_with_citations)  # 僅打印前 1000 字符以避免過長輸出
+            # print("links")
+            # print(result.links["internal"][:3]) 
+            # print("images")
+            # images = result.media.get("images", [])
+            # for img in images:
+            #     print("Image URL:", img["src"], "Alt:", img.get("alt"))
+            print(f"✅ 已處理 {i}")
+            i+= 1
+            if i >= 10:  # 限制只處理前 3 個 URL
+                break
 
