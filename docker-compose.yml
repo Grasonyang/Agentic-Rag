@@ -1,0 +1,27 @@
+version: '3.8'
+
+services:
+  agentic-rag:
+    build: .
+    container_name: agentic-rag-framework
+    environment:
+      - SUPABASE_URL=${SUPABASE_URL:-http://host.docker.internal:8000}
+      - SUPABASE_KEY=${SUPABASE_KEY}
+      - EMBEDDING_MODEL=${EMBEDDING_MODEL:-BAAI/bge-large-zh-v1.5}
+      - CHUNK_WINDOW_SIZE=${CHUNK_WINDOW_SIZE:-100}
+      - CHUNK_STEP_SIZE=${CHUNK_STEP_SIZE:-50}
+    volumes:
+      - ./ex_result:/app/ex_result
+      - ./user_data:/app/user_data
+      - ./logs:/app/logs
+    networks:
+      - rag-network
+    restart: unless-stopped
+    # 移除對本地 Supabase 的依賴，因為 Supabase 運行在外部容器中
+
+networks:
+  rag-network:
+    driver: bridge
+    # 如果需要連接到外部 Supabase 容器網路，可以設定：
+    # external: true
+    # name: supabase_network
