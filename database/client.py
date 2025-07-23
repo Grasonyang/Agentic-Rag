@@ -21,8 +21,9 @@ class SupabaseClient:
     def __init__(self):
         """初始化 Supabase 客戶端"""
         self.url = os.getenv("SUPABASE_URL", "http://host.docker.internal:8000")
-        self.key = os.getenv("SUPABASE_ANON_KEY", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiIsImlzcyI6InN1cGFiYXNlIiwiaWF0IjoxNzUyOTQwODAwLCJleHAiOjE5MTA3MDcyMDB9.6kOE4rH2zJPRENgZCjcYMsCO277ZwOcXGovfwziAYkk")
-        self.service_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoic2VydmljZV9yb2xlIiwiaXNzIjoic3VwYWJhc2UiLCJpYXQiOjE3NTI5NDA4MDAsImV4cCI6MTkxMDcwNzIwMH0.FKE6J7Mj-pUXDnIlZnTFE-mNbUQSluYG4s7sINtWWw0")
+        # 優先使用 SERVICE_ROLE_KEY 來避免 RLS 限制
+        self.key = os.getenv("SERVICE_ROLE_KEY") or os.getenv("SUPABASE_KEY", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyAgCiAgICAicm9sZSI6ICJzZXJ2aWNlX3JvbGUiLAogICAgImlzcyI6ICJzdXBhYmFzZS1kZW1vIiwKICAgICJpYXQiOiAxNjQxNzY5MjAwLAogICAgImV4cCI6IDE3OTk1MzU2MDAKfQ.DaYlNEoUrrEn2Ig7tqibS-PHK5vgusbcbo7X36XVt4Q")
+        self.service_key = os.getenv("SERVICE_ROLE_KEY", self.key)
         self._client: Optional[Client] = None
         self._admin_client: Optional[Client] = None
         

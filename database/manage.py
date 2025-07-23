@@ -5,11 +5,10 @@
 
 import os
 import logging
-import psycopg2
 from pathlib import Path
 from typing import Optional, List
 from dotenv import load_dotenv
-from .client import SupabaseClient
+from client import SupabaseClient
 
 # 載入環境變數
 load_dotenv()
@@ -32,26 +31,26 @@ class DatabaseManager:
         # Supabase 客戶端
         self.supabase_client = SupabaseClient()
         
-    def get_direct_connection(self) -> Optional[psycopg2.extensions.connection]:
-        """
-        獲取直接的 PostgreSQL 連線
+    # def get_direct_connection(self) -> Optional[psycopg2.extensions.connection]:
+    #     """
+    #     獲取直接的 PostgreSQL 連線
         
-        Returns:
-            psycopg2.connection: PostgreSQL 連線物件
-        """
-        try:
-            conn = psycopg2.connect(
-                host=self.db_host,
-                port=self.db_port,
-                database=self.db_name,
-                user=self.db_user,
-                password=self.db_password
-            )
-            logger.info(f"成功連接到 PostgreSQL: {self.db_host}:{self.db_port}")
-            return conn
-        except Exception as e:
-            logger.error(f"PostgreSQL 連線失敗: {e}")
-            return None
+    #     Returns:
+    #         psycopg2.connection: PostgreSQL 連線物件
+    #     """
+    #     try:
+    #         conn = psycopg2.connect(
+    #             host=self.db_host,
+    #             port=self.db_port,
+    #             database=self.db_name,
+    #             user=self.db_user,
+    #             password=self.db_password
+    #         )
+    #         logger.info(f"成功連接到 PostgreSQL: {self.db_host}:{self.db_port}")
+    #         return conn
+    #     except Exception as e:
+    #         logger.error(f"PostgreSQL 連線失敗: {e}")
+    #         return None
     
     def read_schema_file(self) -> str:
         """讀取 SQL schema 檔案"""

@@ -446,7 +446,7 @@ class DatabaseOperations:
             List[Dict]: 搜索結果列表，包含相似度分數
         """
         try:
-            from embedding import EmbeddingManager
+            from embedding.embedding import EmbeddingManager
             
             # 生成查詢嵌入
             embedder = EmbeddingManager()
@@ -681,7 +681,7 @@ class DatabaseOperations:
             List[Dict]: 搜索結果列表
         """
         try:
-            from embedding import EmbeddingManager
+            from embedding.embedding import EmbeddingManager
             
             # 生成查詢嵌入
             embedder = EmbeddingManager()
