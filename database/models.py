@@ -32,6 +32,19 @@ class ChangeFreq(Enum):
     YEARLY = "yearly"
     NEVER = "never"
 
+
+class URLType(Enum):
+    """URL 類型枚舉"""
+    ARTICLE = "article"         # 文章頁面
+    CONTENT = "content"         # 內容頁面
+    OTHER = "other"            # 其他類型
+
+
+class SitemapType(Enum):
+    """Sitemap 類型枚舉"""
+    SITEMAP = "sitemap"             # 標準 sitemap
+    SITEMAPINDEX = "sitemapindex"   # sitemap 索引
+
 class BaseModel:
     """基礎模型類別"""
     

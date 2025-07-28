@@ -1,0 +1,196 @@
+# Makefile for Agentic RAG System
+
+.PHONY: help install test clean db-setup db-clear spider-test embedding-test
+.PHONY: get-sitemap get-urls get-chunking get-embedding run-workflow
+.PHONY: test-crawler check-db logs-clean db-check db-status db-fresh db-form db-tables
+	@$(PYTHON) -c "import sys, os; sys.path.append('.'); from database.postgres_client import PostgreSQLClient; from datetime import datetime; client = PostgreSQLClient(); client.connect(); timestamp = datetime.now().strftime('%Y%m%d_%H%M%S'); backup_file=f'backups/db_backup_{timestamp}.sql'; print(f'📁 備份文件: {backup_file}'); client.disconnect()"
+
+db-migrate: ## Run database migrations (if any)
+	@echo "🔄 執行資料庫遷移..."
+	@echo "⚠️  目前沒有遷移腳本，使用 db-fresh 重新初始化"
+
+db-repair: ## Attempt to repair common database issues
+	@echo "🔧 嘗試修復資料庫問題..."
+	@$(PYTHON) -c "import sys; sys.path.append('.'); from database.postgres_client import PostgreSQLClient; client = PostgreSQLClient(); client.connect(); client.execute_query('ANALYZE', fetch=False); print('✅ 統計信息已更新'); client.disconnect()"ng run-workflow
+.PHONY: test-crawler check-db logs-clean
+
+# Default goal
+.DEFAULT_GOAL := help
+
+# Variables
+PYTHON := python3
+VENV := venv
+REQUIREMENTS := requirements.txt
+
+# URLs and files for workflow
+URL ?= https://example.com
+SITEMAP_URL ?= https://example.com/sitemap.xml
+SITEMAP_LIST ?= sitemaps.txt
+URL_LIST ?= urls.txt
+CHUNK_LIST ?= chunks.txt
+
+# Help target
+help: ## Show this help message
+	@echo "Agentic RAG System - Available Commands:"
+	@echo ""
+	@echo "Setup and Environment:"
+	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | grep -E "(install|clean|test)" | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2}'
+	@echo ""  
+	@echo "Database Operations:"
+	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | grep -E "(db-|check-)" | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2}'
+	@echo ""
+	@echo "Crawler Testing:"
+	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | grep -E "test-" | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2}'
+	@echo ""
+	@echo "Workflow Scripts:"
+	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | grep -E "(get-|run-)" | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2}'
+	@echo ""
+	@echo "Logs and Maintenance:"
+	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | grep -E "logs-" | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2}'
+
+# Installation and setup
+install: ## Install dependencies
+	$(PYTHON) -m pip install --upgrade pip
+	$(PYTHON) -m pip install -r $(REQUIREMENTS)
+
+clean: ## Clean up temporary files and caches
+	find . -type f -name "*.pyc" -delete
+	find . -type d -name "__pycache__" -exec rm -rf {} +
+	find . -type d -name "*.egg-info" -exec rm -rf {} +
+	rm -f *.log
+	rm -f *.txt
+
+# Database operations
+db-setup: ## Setup fresh database with all schemas
+	$(PYTHON) scripts/database/make-fresh.py
+
+db-clear: ## Clear all database data
+	$(PYTHON) scripts/database/make-clear.py
+
+db-check: ## Run comprehensive database health check
+	$(PYTHON) scripts/database/make-db-check.py
+
+db-status: ## Quick database status check
+	@echo "🔍 快速資料庫狀態檢查..."
+	@$(PYTHON) -c "import sys; sys.path.append('.'); from database.postgres_client import PostgreSQLClient; client = PostgreSQLClient(); success = client.connect(); print('✅ 資料庫連接正常' if success else '❌ 資料庫連接失敗'); client.disconnect() if success else None"
+
+# Workflow scripts
+get-sitemap: ## Discover and analyze sitemaps from URL
+	@echo "🗺️  Discovering sitemaps from: $(URL)"
+	$(PYTHON) scripts/getSiteMap.py --url $(URL) --output $(SITEMAP_LIST)
+	@echo "✅ Sitemap discovery complete. Output: $(SITEMAP_LIST)"
+
+get-urls: ## Extract URLs from sitemap list  
+	@echo "🔗 Extracting URLs from: $(SITEMAP_LIST)"
+	$(PYTHON) scripts/getUrls.py --sitemap-list $(SITEMAP_LIST) --output $(URL_LIST)
+	@echo "✅ URL extraction complete. Output: $(URL_LIST)"
+
+get-chunking: ## Crawl URLs and create content chunks
+	@echo "📄 Crawling URLs and chunking content from: $(URL_LIST)"
+	$(PYTHON) scripts/getChunking.py --url-list $(URL_LIST) --output $(CHUNK_LIST)
+	@echo "✅ Content chunking complete. Output: $(CHUNK_LIST)"
+
+get-embedding: ## Generate embeddings for chunks
+	@echo "🧠 Generating embeddings for: $(CHUNK_LIST)"
+	$(PYTHON) scripts/getEmbedding.py --chunk-list $(CHUNK_LIST)
+	@echo "✅ Embedding generation complete. RAG system ready!"
+
+# Complete workflow
+run-workflow: ## Run complete RAG workflow (sitemap → urls → chunking → embedding)
+	@echo "🚀 Starting complete RAG workflow..."
+	@echo ""
+	@$(MAKE) get-sitemap URL=$(URL)
+	@echo ""
+	@$(MAKE) get-urls SITEMAP_LIST=$(SITEMAP_LIST)
+	@echo ""
+	@$(MAKE) get-chunking URL_LIST=$(URL_LIST)
+	@echo ""
+	@$(MAKE) get-embedding CHUNK_LIST=$(CHUNK_LIST)
+	@echo ""
+	@echo "🎉 Complete RAG workflow finished!"
+	@echo "🔍 Your knowledge base is ready for semantic search."
+
+# Testing targets
+test: ## Run all tests
+	$(PYTHON) -m pytest tests/ -v
+
+spider-test: ## Test spider functionality
+	$(PYTHON) scripts/test.py
+
+embedding-test: ## Test embedding functionality
+	$(PYTHON) -c "from embedding.embedding import EmbeddingManager; em = EmbeddingManager(); print('✅ Embedding system working')"
+
+# Advanced workflow options
+get-sitemap-custom: ## Custom sitemap discovery with options
+	@echo "🗺️  Custom sitemap discovery..."
+	$(PYTHON) scripts/getSiteMap.py --url $(URL) --output $(SITEMAP_LIST) --max-depth 3 --batch-size 10
+
+get-chunking-custom: ## Custom chunking with semantic strategy
+	@echo "📄 Custom semantic chunking..."
+	$(PYTHON) scripts/getChunking.py --url-list $(URL_LIST) --output $(CHUNK_LIST) --chunker semantic --chunk-size 500 --overlap 100
+
+get-embedding-gpu: ## Generate embeddings using GPU
+	@echo "🚀 GPU-accelerated embedding generation..."
+	$(PYTHON) scripts/getEmbedding.py --chunk-list $(CHUNK_LIST) --device cuda --batch-size 32
+
+# Monitoring and logs
+show-stats: ## Show processing statistics
+	@echo "📊 Processing Statistics:"
+	@echo "Sitemaps discovered: $$(grep -c 'Sitemap:' $(SITEMAP_LIST) 2>/dev/null || echo 0)"
+	@echo "URLs extracted: $$(grep -c '^- http' $(URL_LIST) 2>/dev/null || echo 0)"  
+	@echo "Chunks created: $$(grep -c '^## Chunk' $(CHUNK_LIST) 2>/dev/null || echo 0)"
+
+show-logs: ## Show recent processing logs
+	@echo "📋 Recent Processing Logs:"
+	@tail -20 *.log 2>/dev/null || echo "No log files found"
+
+# Cleanup workflow files
+clean-workflow: ## Clean workflow output files
+	rm -f $(SITEMAP_LIST) $(URL_LIST) $(CHUNK_LIST)
+
+# New commands for improved logging and testing
+db-health: ## Quick database health summary
+	@echo "🏥 資料庫健康摘要..."
+	@$(PYTHON) -c "import sys; sys.path.append('.'); from database.postgres_client import PostgreSQLClient; client = PostgreSQLClient(); success = client.connect(); print('📊 連接狀態:', '✅ 正常' if success else '❌ 失敗'); client.disconnect() if success else None"
+
+# Database management commands
+db-fresh: ## Reinitialize database with fresh schema
+	@echo "� 重新初始化資料庫..."
+	$(PYTHON) scripts/database/make-fresh.py
+
+db-fresh-force: ## Reinitialize database without confirmation
+	@echo "🔥 強制重新初始化資料庫..."
+	$(PYTHON) scripts/database/make-fresh.py --force
+
+db-clear-force: ## Clear all database data (without confirmation)
+	@echo "🔥 強制清空資料庫數據..."
+	$(PYTHON) scripts/database/make-clear.py --force
+
+db-tables: ## Show database table information
+	@echo "📋 資料庫表格信息..."
+	@$(PYTHON) -c "import sys; sys.path.append('.'); from database.postgres_client import PostgreSQLClient; client = PostgreSQLClient(); client.connect(); tables = ['discovered_urls', 'articles', 'article_chunks', 'sitemaps']; [print(f'📊 {table}: {client.get_table_count(table) if client.table_exists(table) else \"不存在\"} 筆記錄') for table in tables]; client.disconnect()"
+
+db-form: ## Get database form data (JSON format)
+	@echo "� 獲取資料庫表單數據..."
+	@$(PYTHON) scripts/database/make-db-check.py | grep -A 1000 "資料庫表單 JSON 數據:" | tail -n +3
+
+test-crawler: ## Test crawler functionality (requires URL or SITEMAP_URL)
+	@echo "🕷️ 開始爬蟲測試..."
+	$(PYTHON) scripts/test_crawler.py $(if $(SITEMAP_URL),--sitemap $(SITEMAP_URL)) $(if $(URL),--url $(URL))
+
+logs-clean: ## Clean old log files (older than 7 days)
+	@echo "🧹 清理舊日誌文件..."
+	find scripts/logs -name "*.log" -mtime +7 -delete 2>/dev/null || true
+	@echo "✅ 日誌清理完成"
+
+logs-show: ## Show recent logs from all scripts
+	@echo "📋 最近的腳本日誌:"
+	@ls -la scripts/logs/ | tail -10
+	@echo ""
+	@echo "📄 最新日誌內容 (最後 20 行):"
+	@tail -20 scripts/logs/*.log 2>/dev/null | head -100 || echo "沒有找到日誌文件"
+
+output-show: ## Show recent output files
+	@echo "📁 最近生成的輸出文件:"
+	@ls -la scripts/output/ 2>/dev/null | tail -10 || echo "沒有輸出文件"
+	@echo "🗑️  Workflow files cleaned"

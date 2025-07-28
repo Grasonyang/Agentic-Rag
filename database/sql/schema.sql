@@ -201,7 +201,7 @@ CREATE TRIGGER trigger_sitemaps_updated_at
     EXECUTE FUNCTION update_updated_at_column();
 
 -- =============================================
--- 权限设置
+-- 权限设置和 RLS 政策
 -- =============================================
 
 -- 为所有角色授予必要权限
@@ -209,6 +209,68 @@ GRANT USAGE ON SCHEMA public TO anon, authenticated, service_role;
 GRANT ALL ON ALL TABLES IN SCHEMA public TO anon, authenticated, service_role;
 GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO anon, authenticated, service_role;
 GRANT ALL ON ALL FUNCTIONS IN SCHEMA public TO anon, authenticated, service_role;
+
+-- =============================================
+-- RLS (Row Level Security) 政策設定
+-- =============================================
+
+-- 啟用 RLS 對所有表格
+ALTER TABLE discovered_urls ENABLE ROW LEVEL SECURITY;
+ALTER TABLE articles ENABLE ROW LEVEL SECURITY;
+ALTER TABLE article_chunks ENABLE ROW LEVEL SECURITY;
+ALTER TABLE sitemaps ENABLE ROW LEVEL SECURITY;
+
+-- discovered_urls 表的 RLS 政策
+CREATE POLICY "Enable read access for all users" ON discovered_urls
+    FOR SELECT USING (true);
+
+CREATE POLICY "Enable insert for authenticated users" ON discovered_urls
+    FOR INSERT WITH CHECK (true);
+
+CREATE POLICY "Enable update for authenticated users" ON discovered_urls
+    FOR UPDATE USING (true);
+
+CREATE POLICY "Enable delete for authenticated users" ON discovered_urls
+    FOR DELETE USING (true);
+
+-- articles 表的 RLS 政策
+CREATE POLICY "Enable read access for all users" ON articles
+    FOR SELECT USING (true);
+
+CREATE POLICY "Enable insert for authenticated users" ON articles
+    FOR INSERT WITH CHECK (true);
+
+CREATE POLICY "Enable update for authenticated users" ON articles
+    FOR UPDATE USING (true);
+
+CREATE POLICY "Enable delete for authenticated users" ON articles
+    FOR DELETE USING (true);
+
+-- article_chunks 表的 RLS 政策
+CREATE POLICY "Enable read access for all users" ON article_chunks
+    FOR SELECT USING (true);
+
+CREATE POLICY "Enable insert for authenticated users" ON article_chunks
+    FOR INSERT WITH CHECK (true);
+
+CREATE POLICY "Enable update for authenticated users" ON article_chunks
+    FOR UPDATE USING (true);
+
+CREATE POLICY "Enable delete for authenticated users" ON article_chunks
+    FOR DELETE USING (true);
+
+-- sitemaps 表的 RLS 政策
+CREATE POLICY "Enable read access for all users" ON sitemaps
+    FOR SELECT USING (true);
+
+CREATE POLICY "Enable insert for authenticated users" ON sitemaps
+    FOR INSERT WITH CHECK (true);
+
+CREATE POLICY "Enable update for authenticated users" ON sitemaps
+    FOR UPDATE USING (true);
+
+CREATE POLICY "Enable delete for authenticated users" ON sitemaps
+    FOR DELETE USING (true);
 
 -- =============================================
 -- 实用查询函数

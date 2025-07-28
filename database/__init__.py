@@ -5,9 +5,8 @@
 
 from .client import SupabaseClient
 from .models import (
-    ArticleModel, ChunkModel, SearchLogModel, EmbeddingCacheModel,
-    SitemapModel, DiscoveredURLModel, RobotsTxtModel,
-    CrawlStatus, SitemapType, URLType
+    ArticleModel, ChunkModel, SitemapModel, DiscoveredURLModel,
+    CrawlStatus, ChangeFreq, URLType, SitemapType, BaseModel, ModelFactory
 )
 from .operations import DatabaseOperations
 
@@ -15,13 +14,13 @@ __all__ = [
     'SupabaseClient',
     'ArticleModel', 
     'ChunkModel',
-    'SearchLogModel',
-    'EmbeddingCacheModel',
     'SitemapModel',
     'DiscoveredURLModel',
-    'RobotsTxtModel',
+    'BaseModel',
+    'ModelFactory',
     'CrawlStatus',
-    'SitemapType',
+    'ChangeFreq',
     'URLType',
+    'SitemapType',
     'DatabaseOperations'
 ]

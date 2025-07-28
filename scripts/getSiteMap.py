@@ -7,11 +7,11 @@ getSiteMap.py - Sitemap 發現和解析腳本
 2. 解析所有 Sitemap 連結
 3. 遞歸解析 Sitemap Index
 4. 輸出所有發現的 Sitemap 到文件
+5. 記錄詳細日誌到 logs 目錄
 
 使用方法：
     python scripts/getSiteMap.py --url https://example.com
-    python scripts/getSiteMap.py --url         # 1. 從 robots.txt 發現初始 sitemap
-        initial_sitemaps = await discovery.discover_sitemaps(args.url)tps://example.com --output sitemaps.txt
+    python scripts/getSiteMap.py --url https://example.com --output sitemaps.txt
     make get-sitemap URL=https://example.com
 """
 
@@ -26,17 +26,24 @@ from urllib.parse import urljoin, urlparse
 # 添加專案根目錄到 Python 路徑
 sys.path.append(str(Path(__file__).parent.parent))
 
-from spider.crawlers.sitemap_parser import SitemapParser
-from database.client import SupabaseClient
-from database.models import SitemapModel, SitemapType, CrawlStatus
+# 導入本專案模組
+try:
+    from spider.crawlers.sitemap_parser import SitemapParser
+    from database.client import SupabaseClient
+    from database.models import SitemapModel, SitemapType, CrawlStatus
+    from scripts.utils import ScriptRunner, ScriptUtils, DatabaseChecker
+except ImportError as e:
+    print(f"❌ 導入模組失敗: {e}")
+    print("請確認您在專案根目錄執行此腳本")
+    sys.exit(1)
 
 
-class SitemapDiscovery:
+class SitemapDiscovery(ScriptRunner):
     """Sitemap 發現和管理類"""
     
     def __init__(self, output_file: str = "sitemaps.txt"):
+        super().__init__("sitemap_discovery")
         self.parser = SitemapParser()
-        self.db_client = SupabaseClient()
         self.output_file = output_file
         self.discovered_sitemaps: Set[str] = set()
         self.sitemap_hierarchy: List[dict] = []
