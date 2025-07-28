@@ -110,6 +110,38 @@ Agentic-Rag/
 
 
 ## 💡 使用範例
+### 網站爬蟲腳本範例
+
+以下腳本可協助自動化從 `robots.txt` 解析多個 Sitemap，並依照順序將結果記錄至資料庫：
+
+```bash
+# 1. 取得 robots.txt 並解析所有 Sitemap
+python scripts/getSiteMap.py --url https://example.com
+
+# 2. 根據 Sitemap 依序提取所有可爬取的 URL
+python scripts/getUrls.py --sitemap-list sitemaps.txt
+
+# 3. 對每個 URL 進行分塊處理
+python scripts/getChunking.py --url-list urls.txt
+
+# 4. 將分塊內容嵌入向量並記錄至資料庫
+python scripts/getEmbedding.py --chunk-list chunks.txt
+```
+
+> 所有腳本皆可配合 `make` 指令執行，例如：`make get-sitemap`、`make get-urls` 等，詳見 `scripts/` 目錄下的說明。
+
+#### 流程說明
+
+1. **getSiteMap.py**  
+  解析 robots.txt，獲取所有 Sitemap，並依 robots.txt 順序輸出。
+2. **getUrls.py**  
+  依照 Sitemap 順序提取 URL，確保爬取順序與 robots.txt 記錄一致。
+3. **getChunking.py**  
+  對每個 URL 內容進行分塊，便於後續嵌入與儲存。
+4. **getEmbedding.py**  
+  將分塊內容嵌入向量，並依順序寫入資料庫，方便檢索與追蹤。
+
+> 所有步驟均可自動化串接，確保資料流與順序與原始 robots.txt/Sitemap 記錄一致。
 
 
 ## 📊 監控與效能

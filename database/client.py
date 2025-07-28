@@ -24,16 +24,19 @@ class SupabaseClient:
         """初始化 Supabase 客戶端"""
         # 從環境變數獲取配置
         self.url = os.getenv("SUPABASE_URL")
-        self.key = os.getenv("SERVICE_ROLE_KEY")
         
-        # Service key 通常就是 SUPABASE_KEY (service_role key)
-        self.service_key = self.key
+        # 優先使用 SERVICE_ROLE_KEY，如果不行則使用 ANON_KEY
+        self.service_key = os.getenv("SERVICE_ROLE_KEY")
+        self.anon_key = os.getenv("ANON_KEY")
+        
+        # 默認使用 ANON_KEY，因為我們的權限設置允許 anon 角色訪問
+        self.key = self.anon_key or self.service_key
         
         if not self.key:
-            logger.error("❌ 未找到 SERVICE_ROLE_KEY 環境變數")
-            raise ValueError("SERVICE_ROLE_KEY 環境變數必須設置")
+            logger.error("❌ 未找到 ANON_KEY 或 SERVICE_ROLE_KEY 環境變數")
+            raise ValueError("ANON_KEY 或 SERVICE_ROLE_KEY 環境變數必須設置")
         
-        # 檢查是否為 service_role key
+        # 檢查使用的 key 類型
         try:
             import base64
             import json
