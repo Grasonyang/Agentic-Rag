@@ -65,23 +65,8 @@ class DatabaseManager:
     def get_table_list(self) -> List[str]:
         """獲取資料庫中的表格列表"""
         try:
-            # 優先嘗試直接連線
-            conn = self.get_direct_connection()
-            if conn:
-                with conn.cursor() as cursor:
-                    cursor.execute("""
-                        SELECT tablename 
-                        FROM pg_tables 
-                        WHERE schemaname = 'public'
-                        AND tablename NOT LIKE 'pg_%'
-                        AND tablename NOT LIKE 'sql_%'
-                    """)
-                    tables = [row[0] for row in cursor.fetchall()]
-                conn.close()
-                return tables
-            else:
-                # 使用 Supabase 檢查已知表格
-                return self._get_tables_supabase()
+            # 使用 Supabase 檢查已知表格
+            return self._get_tables_supabase()
                 
         except Exception as e:
             logger.error(f"獲取表格列表失敗: {e}")
@@ -120,49 +105,12 @@ class DatabaseManager:
             bool: 成功返回 True，否則返回 False
         """
         try:
-            # 優先嘗試使用直接連線
-            conn = self.get_direct_connection()
-            if conn:
-                return self._drop_tables_direct(conn)
-            else:
-                # 使用 Supabase RPC 函數
-                return self._drop_tables_supabase()
+            # 使用 Supabase RPC 函數或手動清除
+            return self._drop_tables_supabase()
                 
         except Exception as e:
             logger.error(f"刪除表格失敗: {e}")
             print(f"❌ 刪除表格失敗: {e}")
-            return False
-    
-    def _drop_tables_direct(self, conn) -> bool:
-        """使用直接連線刪除表格"""
-        try:
-            with conn.cursor() as cursor:
-                # 獲取所有使用者表格
-                tables = self.get_table_list()
-                
-                if not tables:
-                    print("📄 沒有找到需要刪除的表格")
-                    return True
-                
-                print(f"🔥 準備刪除 {len(tables)} 個表格: {', '.join(tables)}")
-                
-                # 刪除每個表格
-                for table in tables:
-                    try:
-                        cursor.execute(f'DROP TABLE IF EXISTS "{table}" CASCADE;')
-                        print(f"  ✅ 已刪除表格: {table}")
-                    except Exception as e:
-                        print(f"  ❌ 刪除表格 {table} 失敗: {e}")
-                
-                # 提交更改
-                conn.commit()
-            
-            conn.close()
-            print("🎯 所有表格已成功刪除")
-            return True
-            
-        except Exception as e:
-            logger.error(f"直接刪除表格失敗: {e}")
             return False
     
     def _drop_tables_supabase(self) -> bool:
@@ -219,33 +167,19 @@ class DatabaseManager:
             bool: 成功返回 True，否則返回 False
         """
         try:
-            # 讀取 schema
-            schema_sql = self.read_schema_file()
+            # 使用 Supabase（提示用戶手動執行）
+            print("⚠️ 無法使用直接連線創建表格")
+            print("💡 請手動在 Supabase Dashboard 中執行 database/schema.sql")
+            print("   或使用 psql 連接到 Supabase 資料庫執行 schema")
             
-            # 優先嘗試直接連線
-            conn = self.get_direct_connection()
-            if conn:
-                with conn.cursor() as cursor:
-                    # 執行 schema SQL
-                    cursor.execute(schema_sql)
-                    conn.commit()
-                conn.close()
-                print("✅ 表格創建成功（使用直接連線）")
+            # 嘗試檢查表格是否已經存在
+            tables = self.get_table_list()
+            if tables:
+                print(f"✅ 發現現有表格: {', '.join(tables)}")
                 return True
             else:
-                # 使用 Supabase（提示用戶手動執行）
-                print("⚠️ 無法使用直接連線創建表格")
-                print("💡 請手動在 Supabase Dashboard 中執行 database/schema.sql")
-                print("   或使用 psql 連接到 Supabase 資料庫執行 schema")
-                
-                # 嘗試檢查表格是否已經存在
-                tables = self.get_table_list()
-                if tables:
-                    print(f"✅ 發現現有表格: {', '.join(tables)}")
-                    return True
-                else:
-                    print("❌ 沒有發現表格，請手動執行 schema.sql")
-                    return False
+                print("❌ 沒有發現表格，請手動執行 schema.sql")
+                return False
                 
         except Exception as e:
             logger.error(f"創建表格失敗: {e}")
@@ -311,16 +245,92 @@ class DatabaseManager:
             tables = self.get_table_list()
             supabase_connected = self.supabase_client.test_connection()
             
+            # 嘗試獲取表格統計信息
+            table_stats = {}
+            if supabase_connected:
+                try:
+                    from .operations import DatabaseOperations
+                    client = self.supabase_client.get_client()
+                    if client:
+                        ops = DatabaseOperations(client)
+                        table_stats = ops.get_table_row_counts()
+                except Exception as e:
+                    logger.warning(f"無法獲取表格統計信息: {e}")
+            
             return {
                 "tables_count": len(tables),
                 "tables": tables,
+                "table_statistics": table_stats,
                 "supabase_connected": supabase_connected,
-                "direct_connection": self.get_direct_connection() is not None
+                "direct_connection": False  # 暫時禁用直接連接檢測
             }
             
         except Exception as e:
             logger.error(f"獲取資料庫狀態失敗: {e}")
             return {"error": str(e)}
+    
+    def clear_database_data(self, table_name: str = None) -> bool:
+        """
+        清除資料庫數據
+        
+        Args:
+            table_name: 可選，指定要清除的表格名稱。如果為 None，則清除所有表格
+            
+        Returns:
+            bool: 清除成功返回 True，否則返回 False
+        """
+        try:
+            from .operations import DatabaseOperations
+            
+            client = self.supabase_client.get_client()
+            if not client:
+                print("❌ 無法連接到資料庫")
+                return False
+            
+            ops = DatabaseOperations(client)
+            
+            if table_name:
+                print(f"🧹 清除表格數據: {table_name}")
+                return ops.clear_table_data(table_name)
+            else:
+                print("🧹 清除所有表格數據...")
+                return ops.clear_all_data()
+                
+        except Exception as e:
+            logger.error(f"清除資料庫數據失敗: {e}")
+            print(f"❌ 清除資料庫數據失敗: {e}")
+            return False
+    
+    def show_table_statistics(self):
+        """顯示表格統計信息"""
+        try:
+            from .operations import DatabaseOperations
+            
+            client = self.supabase_client.get_client()
+            if not client:
+                print("❌ 無法連接到資料庫")
+                return
+            
+            ops = DatabaseOperations(client)
+            stats = ops.get_table_row_counts()
+            
+            print("📊 Database Table Statistics:")
+            print("-" * 40)
+            
+            total_rows = 0
+            for table_name, count in stats.items():
+                if count >= 0:
+                    print(f"  {table_name:<20}: {count:>8} rows")
+                    total_rows += count
+                else:
+                    print(f"  {table_name:<20}: {'ERROR':>8}")
+            
+            print("-" * 40)
+            print(f"  {'Total':<20}: {total_rows:>8} rows")
+            
+        except Exception as e:
+            logger.error(f"顯示表格統計信息失敗: {e}")
+            print(f"❌ 無法獲取表格統計信息: {e}")
 
 # 便利函數
 def reset_database():
@@ -338,11 +348,121 @@ def get_database_status():
     manager = DatabaseManager()
     return manager.get_database_status()
 
+def clear_all_data():
+    """清除所有數據的便利函數"""
+    try:
+        from .operations import DatabaseOperations
+        
+        manager = DatabaseManager()
+        client = manager.supabase_client.get_client()
+        
+        if not client:
+            print("❌ 無法連接到資料庫")
+            return False
+        
+        ops = DatabaseOperations(client)
+        return ops.clear_all_data()
+        
+    except Exception as e:
+        logger.error(f"清除所有數據失敗: {e}")
+        return False
+
+def clear_table_data(table_name: str):
+    """清除指定表格數據的便利函數"""
+    try:
+        from .operations import DatabaseOperations
+        
+        manager = DatabaseManager()
+        client = manager.supabase_client.get_client()
+        
+        if not client:
+            print("❌ 無法連接到資料庫")
+            return False
+        
+        ops = DatabaseOperations(client)
+        return ops.clear_table_data(table_name)
+        
+    except Exception as e:
+        logger.error(f"清除表格 {table_name} 失敗: {e}")
+        return False
+
+def get_table_statistics():
+    """獲取表格統計信息的便利函數"""
+    try:
+        from .operations import DatabaseOperations
+        
+        manager = DatabaseManager()
+        client = manager.supabase_client.get_client()
+        
+        if not client:
+            print("❌ 無法連接到資料庫")
+            return {}
+        
+        ops = DatabaseOperations(client)
+        return ops.get_table_row_counts()
+        
+    except Exception as e:
+        logger.error(f"獲取表格統計信息失敗: {e}")
+        return {}
+
 if __name__ == "__main__":
+    import sys
+    
     # 測試資料庫管理功能
     manager = DatabaseManager()
     
-    print("📊 資料庫狀態:")
-    status = manager.get_database_status()
-    for key, value in status.items():
-        print(f"  {key}: {value}")
+    # 檢查命令行參數
+    if len(sys.argv) > 1:
+        command = sys.argv[1].lower()
+        
+        if command == "status":
+            print("📊 資料庫狀態:")
+            status = manager.get_database_status()
+            for key, value in status.items():
+                if key != "table_statistics":
+                    print(f"  {key}: {value}")
+            
+            # 顯示表格統計
+            if "table_statistics" in status and status["table_statistics"]:
+                print("\n📊 表格統計:")
+                for table, count in status["table_statistics"].items():
+                    print(f"  {table}: {count} rows")
+                    
+        elif command == "clear":
+            table_name = sys.argv[2] if len(sys.argv) > 2 else None
+            if manager.clear_database_data(table_name):
+                print("✅ 清除操作完成")
+            else:
+                print("❌ 清除操作失敗")
+                
+        elif command == "stats":
+            manager.show_table_statistics()
+            
+        elif command == "reset":
+            if manager.reset_database():
+                print("✅ 資料庫重置完成")
+            else:
+                print("❌ 資料庫重置失敗")
+                
+        elif command == "init":
+            if manager.initialize_database():
+                print("✅ 資料庫初始化完成")
+            else:
+                print("❌ 資料庫初始化失敗")
+                
+        else:
+            print("❌ 未知命令")
+            print("可用命令: status, clear [table_name], stats, reset, init")
+    else:
+        print("📊 資料庫狀態:")
+        status = manager.get_database_status()
+        for key, value in status.items():
+            print(f"  {key}: {value}")
+        
+        print("\n💡 使用方法:")
+        print("  python manage.py status     - 顯示資料庫狀態")
+        print("  python manage.py clear      - 清除所有數據")
+        print("  python manage.py clear <table> - 清除指定表格")
+        print("  python manage.py stats      - 顯示表格統計")
+        print("  python manage.py reset      - 重置資料庫")
+        print("  python manage.py init       - 初始化資料庫")

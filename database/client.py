@@ -5,6 +5,8 @@ Supabase 客戶端管理
 
 import os
 import logging
+import base64
+import json
 from typing import Optional
 from dotenv import load_dotenv
 from supabase import create_client, Client
@@ -20,10 +22,32 @@ class SupabaseClient:
     
     def __init__(self):
         """初始化 Supabase 客戶端"""
-        self.url = os.getenv("SUPABASE_URL", "http://host.docker.internal:8000")
-        # 優先使用 SERVICE_ROLE_KEY 來避免 RLS 限制
-        self.key = os.getenv("SERVICE_ROLE_KEY") or os.getenv("SUPABASE_KEY", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyAgCiAgICAicm9sZSI6ICJzZXJ2aWNlX3JvbGUiLAogICAgImlzcyI6ICJzdXBhYmFzZS1kZW1vIiwKICAgICJpYXQiOiAxNjQxNzY5MjAwLAogICAgImV4cCI6IDE3OTk1MzU2MDAKfQ.DaYlNEoUrrEn2Ig7tqibS-PHK5vgusbcbo7X36XVt4Q")
-        self.service_key = os.getenv("SERVICE_ROLE_KEY", self.key)
+        # 從環境變數獲取配置
+        self.url = os.getenv("SUPABASE_URL")
+        self.key = os.getenv("SERVICE_ROLE_KEY")
+        
+        # Service key 通常就是 SUPABASE_KEY (service_role key)
+        self.service_key = self.key
+        
+        if not self.key:
+            logger.error("❌ 未找到 SERVICE_ROLE_KEY 環境變數")
+            raise ValueError("SERVICE_ROLE_KEY 環境變數必須設置")
+        
+        # 檢查是否為 service_role key
+        try:
+            import base64
+            import json
+            # 解析 JWT payload
+            payload_part = self.key.split('.')[1]
+            # 添加padding if needed
+            payload_part += '=' * (4 - len(payload_part) % 4)
+            payload = json.loads(base64.b64decode(payload_part))
+            self.key_role = payload.get('role', 'unknown')
+            logger.info(f"使用的 key 角色: {self.key_role}")
+        except Exception as e:
+            logger.warning(f"無法解析 JWT: {e}")
+            self.key_role = 'unknown'
+        
         self._client: Optional[Client] = None
         self._admin_client: Optional[Client] = None
         

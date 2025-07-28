@@ -22,9 +22,26 @@ from ..utils.rate_limiter import AdaptiveRateLimiter, RateLimitConfig
 # 修復相對導入問題
 import sys
 import os
+from dotenv import load_dotenv
+
+# 載入環境變數
+load_dotenv()
+
+# 從環境變數讀取配置
+RATE_LIMIT_MAX_RETRIES = int(os.getenv('RATE_LIMIT_MAX_RETRIES', '2'))
+RATE_LIMIT_BASE_DELAY_MIN = float(os.getenv('RATE_LIMIT_BASE_DELAY_MIN', '1.0'))
+RATE_LIMIT_MAX_DELAY = float(os.getenv('RATE_LIMIT_MAX_DELAY', '30.0'))
+CRAWLER_DELAY = float(os.getenv('CRAWLER_DELAY', '2.5'))
+CRAWLER_VERBOSE = os.getenv('CRAWLER_VERBOSE', 'true').lower() == 'true'
+CRAWLER_HEADLESS = os.getenv('CRAWLER_HEADLESS', 'true').lower() == 'true'
+BROWSER_VIEWPORT_WIDTH = int(os.getenv('BROWSER_VIEWPORT_WIDTH', '1920'))
+BROWSER_VIEWPORT_HEIGHT = int(os.getenv('BROWSER_VIEWPORT_HEIGHT', '1080'))
+CRAWLER_TIMEOUT = int(os.getenv('CRAWLER_TIMEOUT', '60000'))
+CRAWLER_MAX_CONCURRENT = int(os.getenv('CRAWLER_MAX_CONCURRENT', '10'))
+
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
-from config import Config
 from database import SupabaseClient, DatabaseOperations
+from database.models import CrawlStatus
 
 logger = logging.getLogger(__name__)
 
@@ -59,14 +76,24 @@ class WebCrawler:
             rate_config: 速率限制配置
         """
         self.retry_manager = RetryManager(retry_config or RetryConfig(
-            max_retries=Config.RATE_LIMIT_MAX_RETRIES,
-            base_delay=Config.RATE_LIMIT_BASE_DELAY_MIN,
-            max_delay=Config.RATE_LIMIT_MAX_DELAY
+            max_retries=RATE_LIMIT_MAX_RETRIES,
+            base_delay=RATE_LIMIT_BASE_DELAY_MIN,
+            max_delay=RATE_LIMIT_MAX_DELAY
         ))
         self.rate_limiter = AdaptiveRateLimiter(rate_config or RateLimitConfig(
-            requests_per_second=1.0 / Config.CRAWLER_DELAY,
+            requests_per_second=1.0 / CRAWLER_DELAY,
             adaptive=True
         ))
+        
+        # 初始化數據庫連接（可選）
+        self.db = None
+        try:
+            db_client = SupabaseClient()
+            client = db_client.get_client()
+            if client:
+                self.db = DatabaseOperations(client)
+        except Exception as e:
+            logger.warning(f"無法初始化數據庫連接: {e}")
         
         # 統計信息
         self.stats = {
@@ -80,10 +107,10 @@ class WebCrawler:
     def _create_browser_config(self) -> BrowserConfig:
         """創建簡化的瀏覽器配置"""
         return BrowserConfig(
-            verbose=Config.CRAWLER_VERBOSE,
-            headless=Config.CRAWLER_HEADLESS,
-            viewport_width=Config.BROWSER_VIEWPORT_WIDTH,
-            viewport_height=Config.BROWSER_VIEWPORT_HEIGHT,
+            verbose=CRAWLER_VERBOSE,
+            headless=CRAWLER_HEADLESS,
+            viewport_width=BROWSER_VIEWPORT_WIDTH,
+            viewport_height=BROWSER_VIEWPORT_HEIGHT,
             extra_args=[
                 "--disable-blink-features=AutomationControlled",
                 "--disable-web-security"
@@ -98,11 +125,11 @@ class WebCrawler:
     def _create_run_config(self) -> CrawlerRunConfig:
         """創建簡化的運行配置"""
         return CrawlerRunConfig(
-            verbose=Config.CRAWLER_VERBOSE,
+            verbose=CRAWLER_VERBOSE,
             word_count_threshold=10,
             excluded_tags=['form', 'header', 'footer', 'nav'],
             cache_mode=CacheMode.ENABLED,
-            page_timeout=Config.CRAWLER_TIMEOUT,
+            page_timeout=CRAWLER_TIMEOUT,
         )
     
     async def crawl_url(self, url: str, force: bool = False) -> CrawlResult:
@@ -275,7 +302,7 @@ class WebCrawler:
         if not urls:
             return []
         
-        max_concurrent = max_concurrent or Config.CRAWLER_MAX_CONCURRENT
+        max_concurrent = max_concurrent or CRAWLER_MAX_CONCURRENT
         self.stats["start_time"] = time.time()
         
         logger.info(f"開始批量爬取 {len(urls)} 個 URLs，最大並發: {max_concurrent}")

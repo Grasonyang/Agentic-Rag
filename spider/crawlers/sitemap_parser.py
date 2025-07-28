@@ -166,9 +166,8 @@ class SitemapParser:
                         self.rate_limiter.report_failure(domain)
                         raise aiohttp.ClientError(f"HTTP {response.status}")
             
-            return await asyncio.create_task(
-                asyncio.to_thread(self.retry_manager.retry_with_backoff, fetch)
-            )
+            # 直接調用異步函數，不使用 retry_with_backoff（它是為同步函數設計的）
+            return await fetch()
             
         except Exception as e:
             logger.error(f"獲取 sitemap 失敗 {url}: {e}")

@@ -11,7 +11,7 @@ from supabase import Client
 from .client import SupabaseClient
 from .models import (
     ArticleModel, ChunkModel, SearchLogModel, EmbeddingCacheModel,
-    SitemapModel, DiscoveredURLModel, RobotsTxtModel,
+    SitemapModel, DiscoveredURLModel, RobotsTxtModel, TaskExecutionLogModel,
     CrawlStatus, SitemapType, URLType
 )
 
@@ -1225,3 +1225,420 @@ class DatabaseOperations:
         except Exception as e:
             logger.error(f"批量創建發現的 URL 時發生錯誤: {e}")
             return 0
+    
+    # ==================== 數據清除操作 ====================
+    
+    def clear_table_data(self, table_name: str) -> bool:
+        """
+        清除指定表格的所有數據
+        
+        Args:
+            table_name: 表格名稱
+            
+        Returns:
+            bool: 清除成功返回 True，否則返回 False
+        """
+        try:
+            logger.info(f"正在清除表格數據: {table_name}")
+            
+            # 使用 neq 條件刪除所有記錄
+            response = self.client.table(table_name).delete().neq('id', '00000000-0000-0000-0000-000000000000').execute()
+            
+            logger.info(f"✅ 成功清除表格: {table_name}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"清除表格 {table_name} 時發生錯誤: {e}")
+            return False
+    
+    def clear_all_articles(self) -> bool:
+        """
+        清除所有文章數據（會級聯清除相關的文章塊）
+        
+        Returns:
+            bool: 清除成功返回 True，否則返回 False
+        """
+        return self.clear_table_data("articles")
+    
+    def clear_all_chunks(self) -> bool:
+        """
+        清除所有文章塊數據
+        
+        Returns:
+            bool: 清除成功返回 True，否則返回 False
+        """
+        return self.clear_table_data("article_chunks")
+    
+    def clear_search_logs(self) -> bool:
+        """
+        清除所有搜索日誌
+        
+        Returns:
+            bool: 清除成功返回 True，否則返回 False
+        """
+        return self.clear_table_data("search_logs")
+    
+    def clear_embedding_cache(self) -> bool:
+        """
+        清除所有嵌入向量緩存
+        
+        Returns:
+            bool: 清除成功返回 True，否則返回 False
+        """
+        return self.clear_table_data("embedding_cache")
+    
+    def clear_task_execution_logs(self) -> bool:
+        """清除任務執行日誌"""
+        return self.clear_table_data("task_execution_logs")
+    
+    def clear_crawl_data(self) -> bool:
+        """
+        清除所有爬取相關的數據（sitemap、discovered_urls、robots_txt）
+        
+        Returns:
+            bool: 清除成功返回 True，否則返回 False
+        """
+        try:
+            logger.info("正在清除爬取相關數據...")
+            
+            # 按依賴關係順序清除
+            success = True
+            success &= self.clear_table_data("discovered_urls")  # 先清除依賴表
+            success &= self.clear_table_data("sitemaps")
+            success &= self.clear_table_data("robots_txt")
+            
+            if success:
+                logger.info("✅ 成功清除所有爬取數據")
+            else:
+                logger.warning("⚠️ 部分爬取數據清除失敗")
+            
+            return success
+            
+        except Exception as e:
+            logger.error(f"清除爬取數據時發生錯誤: {e}")
+            return False
+    
+    def clear_all_data(self) -> bool:
+        """
+        清除所有表格的數據（按依賴關係順序）
+        
+        Returns:
+            bool: 清除成功返回 True，否則返回 False
+        """
+        try:
+            logger.info("正在清除所有數據...")
+            
+            # 按依賴關係倒序清除
+            tables_to_clear = [
+                'search_logs',           # 搜索日誌
+                'task_execution_logs',   # 任務執行日誌
+                'embedding_cache',       # 嵌入向量緩存
+                'article_chunks',        # 文章塊（依賴於 articles）
+                'articles',              # 文章
+                'discovered_urls',       # 發現的URL（依賴於 sitemaps）
+                'sitemaps',              # 站點地圖
+                'robots_txt'             # robots.txt 記錄
+            ]
+            
+            success_count = 0
+            for table_name in tables_to_clear:
+                if self.clear_table_data(table_name):
+                    success_count += 1
+            
+            total_tables = len(tables_to_clear)
+            if success_count == total_tables:
+                logger.info(f"✅ 成功清除所有 {total_tables} 個表格的數據")
+                return True
+            else:
+                logger.warning(f"⚠️ 僅成功清除 {success_count}/{total_tables} 個表格")
+                return False
+                
+        except Exception as e:
+            logger.error(f"清除所有數據時發生錯誤: {e}")
+            return False
+    
+    def get_table_row_counts(self) -> dict:
+        """
+        獲取所有表格的記錄數量
+        
+        Returns:
+            dict: 表格名稱和記錄數量的字典
+        """
+        tables = [
+            'articles', 'article_chunks', 'search_logs', 
+            'embedding_cache', 'sitemaps', 'discovered_urls', 'robots_txt',
+            'task_execution_logs'
+        ]
+        
+        counts = {}
+        for table_name in tables:
+            try:
+                response = self.client.table(table_name).select('id', count='exact').execute()
+                counts[table_name] = response.count if hasattr(response, 'count') else 0
+            except Exception as e:
+                logger.warning(f"無法獲取表格 {table_name} 的記錄數量: {e}")
+                counts[table_name] = -1  # 表示錯誤
+        
+        return counts
+    
+    def update_sitemap(self, sitemap: SitemapModel) -> bool:
+        """
+        更新 sitemap 記錄
+        
+        Args:
+            sitemap: sitemap 模型實例
+            
+        Returns:
+            bool: 更新成功返回 True，否則返回 False
+        """
+        try:
+            if not sitemap.validate():
+                return False
+            
+            response = (self.client.table("sitemaps")
+                       .update(sitemap.to_dict())
+                       .eq("id", sitemap.id)
+                       .execute())
+            
+            if response.data:
+                logger.info(f"成功更新 sitemap: {sitemap.url}")
+                return True
+            else:
+                logger.error(f"更新 sitemap 失敗: {sitemap.url}")
+                return False
+                
+        except Exception as e:
+            logger.error(f"更新 sitemap 時發生錯誤: {e}")
+            return False
+    
+    def get_discovered_url_by_url(self, url: str) -> Optional[DiscoveredURLModel]:
+        """
+        根據 URL 獲取發現的 URL
+        
+        Args:
+            url: URL
+            
+        Returns:
+            DiscoveredURLModel: 發現的 URL 實例，未找到時返回 None
+        """
+        try:
+            response = (self.client.table("discovered_urls")
+                       .select("*")
+                       .eq("url", url)
+                       .limit(1)
+                       .execute())
+            
+            if response.data:
+                return DiscoveredURLModel.from_dict(response.data[0])
+            else:
+                return None
+                
+        except Exception as e:
+            logger.error(f"獲取發現的 URL 時發生錯誤: {e}")
+            return None
+    
+    def list_sitemaps(self, limit: int = 100) -> List[Dict[str, Any]]:
+        """
+        列出所有 sitemap 記錄
+        
+        Args:
+            limit: 限制數量
+            
+        Returns:
+            List[Dict[str, Any]]: sitemap 記錄列表
+        """
+        try:
+            response = (self.client.table("sitemaps")
+                       .select("*")
+                       .order("created_at", desc=True)
+                       .limit(limit)
+                       .execute())
+            
+            return response.data if response.data else []
+            
+        except Exception as e:
+            logger.error(f"列出 sitemaps 時發生錯誤: {e}")
+            return []
+    
+    def list_discovered_urls(self, limit: int = 100, status: str = None) -> List[Dict[str, Any]]:
+        """
+        列出發現的 URL 記錄
+        
+        Args:
+            limit: 限制數量
+            status: 狀態篩選
+            
+        Returns:
+            List[Dict[str, Any]]: 發現的 URL 記錄列表
+        """
+        try:
+            query = self.client.table("discovered_urls").select("*")
+            
+            if status:
+                query = query.eq("status", status)
+            
+            response = (query
+                       .order("created_at", desc=True)
+                       .limit(limit)
+                       .execute())
+            
+            return response.data if response.data else []
+            
+        except Exception as e:
+            logger.error(f"列出發現的 URLs 時發生錯誤: {e}")
+            return []
+
+    # ========== 任務執行日誌相關操作 ==========
+    
+    def create_task_execution_log(self, task_log: 'TaskExecutionLogModel') -> bool:
+        """
+        創建任務執行日誌記錄
+        
+        Args:
+            task_log: 任務執行日誌模型實例
+            
+        Returns:
+            bool: 創建成功返回 True，否則返回 False
+        """
+        try:
+            response = self.client.table("task_execution_logs").insert(task_log.to_dict()).execute()
+            
+            if response.data:
+                logger.info(f"成功創建任務執行日誌: {task_log.task_name}")
+                return True
+            else:
+                logger.error(f"創建任務執行日誌失敗: {task_log.task_name}")
+                return False
+                
+        except Exception as e:
+            logger.error(f"創建任務執行日誌時發生錯誤: {e}")
+            return False
+    
+    def update_task_execution_log(self, task_log: 'TaskExecutionLogModel') -> bool:
+        """
+        更新任務執行日誌記錄
+        
+        Args:
+            task_log: 任務執行日誌模型實例
+            
+        Returns:
+            bool: 更新成功返回 True，否則返回 False
+        """
+        try:
+            response = (self.client.table("task_execution_logs")
+                       .update(task_log.to_dict())
+                       .eq("id", task_log.id)
+                       .execute())
+            
+            if response.data:
+                logger.info(f"成功更新任務執行日誌: {task_log.task_name}")
+                return True
+            else:
+                logger.error(f"更新任務執行日誌失敗: {task_log.task_name}")
+                return False
+                
+        except Exception as e:
+            logger.error(f"更新任務執行日誌時發生錯誤: {e}")
+            return False
+    
+    def get_task_execution_log_by_id(self, log_id: str) -> Optional['TaskExecutionLogModel']:
+        """
+        根據 ID 獲取任務執行日誌記錄
+        
+        Args:
+            log_id: 日誌 ID
+            
+        Returns:
+            Optional[TaskExecutionLogModel]: 找到則返回模型實例，否則返回 None
+        """
+        try:
+            response = (self.client.table("task_execution_logs")
+                       .select("*")
+                       .eq("id", log_id)
+                       .execute())
+            
+            if response.data and len(response.data) > 0:
+                from .models import TaskExecutionLogModel
+                return TaskExecutionLogModel.from_dict(response.data[0])
+            else:
+                return None
+                
+        except Exception as e:
+            logger.error(f"獲取任務執行日誌時發生錯誤: {e}")
+            return None
+    
+    def list_task_execution_logs(self, limit: int = 100, task_type: str = None, 
+                                status: str = None) -> List[Dict[str, Any]]:
+        """
+        列出任務執行日誌記錄
+        
+        Args:
+            limit: 限制數量
+            task_type: 任務類型篩選
+            status: 狀態篩選
+            
+        Returns:
+            List[Dict[str, Any]]: 任務執行日誌記錄列表
+        """
+        try:
+            query = self.client.table("task_execution_logs").select("*")
+            
+            if task_type:
+                query = query.eq("task_type", task_type)
+            
+            if status:
+                query = query.eq("status", status)
+            
+            response = (query
+                       .order("created_at", desc=True)
+                       .limit(limit)
+                       .execute())
+            
+            return response.data if response.data else []
+            
+        except Exception as e:
+            logger.error(f"列出任務執行日誌時發生錯誤: {e}")
+            return []
+    
+    def get_task_execution_statistics(self) -> Dict[str, Any]:
+        """
+        獲取任務執行統計信息
+        
+        Returns:
+            Dict[str, Any]: 統計信息
+        """
+        try:
+            # 總任務數
+            total_response = self.client.table("task_execution_logs").select("*", count="exact").limit(1).execute()
+            total_tasks = total_response.count if hasattr(total_response, 'count') else 0
+            
+            # 按狀態統計
+            status_stats = {}
+            for status in ['pending', 'crawling', 'completed', 'error']:
+                status_response = (self.client.table("task_execution_logs")
+                                 .select("*", count="exact")
+                                 .eq("status", status)
+                                 .limit(1)
+                                 .execute())
+                status_stats[status] = status_response.count if hasattr(status_response, 'count') else 0
+            
+            # 按任務類型統計
+            type_response = (self.client.table("task_execution_logs")
+                           .select("task_type")
+                           .execute())
+            
+            type_stats = {}
+            if type_response.data:
+                for log in type_response.data:
+                    task_type = log.get('task_type', 'unknown')
+                    type_stats[task_type] = type_stats.get(task_type, 0) + 1
+            
+            return {
+                "total_tasks": total_tasks,
+                "status_stats": status_stats,
+                "type_stats": type_stats
+            }
+            
+        except Exception as e:
+            logger.error(f"獲取任務執行統計時發生錯誤: {e}")
+            return {"error": str(e)}

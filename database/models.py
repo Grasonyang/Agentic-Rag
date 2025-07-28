@@ -534,3 +534,103 @@ class EmbeddingCacheModel(BaseModel):
             logger.error("模型名稱不能為空")
             return False
         return True
+
+class TaskExecutionLogModel(BaseModel):
+    """任務執行日誌模型"""
+    
+    def __init__(self, task_name: str, task_type: str, status: CrawlStatus = CrawlStatus.PENDING,
+                 started_at: str = None, completed_at: str = None, duration_ms: int = None,
+                 total_processed: int = 0, total_success: int = 0, total_errors: int = 0,
+                 error_message: str = None, result_summary: Dict[str, Any] = None,
+                 metadata: Dict[str, Any] = None):
+        super().__init__()
+        self.task_name = task_name
+        self.task_type = task_type
+        self.status = status
+        self.started_at = started_at or datetime.now().isoformat()
+        self.completed_at = completed_at
+        self.duration_ms = duration_ms
+        self.total_processed = total_processed
+        self.total_success = total_success
+        self.total_errors = total_errors
+        self.error_message = error_message
+        self.result_summary = result_summary or {}
+        self.metadata = metadata or {}
+        self.updated_at = datetime.now().isoformat()
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """轉換為字典格式"""
+        data = super().to_dict()
+        data.update({
+            "task_name": self.task_name,
+            "task_type": self.task_type,
+            "status": self.status.value if isinstance(self.status, CrawlStatus) else self.status,
+            "started_at": self.started_at,
+            "completed_at": self.completed_at,
+            "duration_ms": self.duration_ms,
+            "total_processed": self.total_processed,
+            "total_success": self.total_success,
+            "total_errors": self.total_errors,
+            "error_message": self.error_message,
+            "result_summary": self.result_summary,
+            "metadata": self.metadata,
+            "updated_at": self.updated_at
+        })
+        return data
+    
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> 'TaskExecutionLogModel':
+        """從字典創建實例"""
+        log = cls(
+            task_name=data["task_name"],
+            task_type=data["task_type"],
+            status=CrawlStatus(data.get("status", "pending")),
+            started_at=data.get("started_at"),
+            completed_at=data.get("completed_at"),
+            duration_ms=data.get("duration_ms"),
+            total_processed=data.get("total_processed", 0),
+            total_success=data.get("total_success", 0),
+            total_errors=data.get("total_errors", 0),
+            error_message=data.get("error_message"),
+            result_summary=data.get("result_summary", {}),
+            metadata=data.get("metadata", {})
+        )
+        if "id" in data:
+            log.id = data["id"]
+        if "created_at" in data:
+            log.created_at = data["created_at"]
+        if "updated_at" in data:
+            log.updated_at = data["updated_at"]
+        return log
+    
+    def mark_completed(self, duration_ms: int = None, result_summary: Dict[str, Any] = None):
+        """標記任務完成"""
+        self.status = CrawlStatus.COMPLETED
+        self.completed_at = datetime.now().isoformat()
+        if duration_ms:
+            self.duration_ms = duration_ms
+        if result_summary:
+            self.result_summary.update(result_summary)
+        self.updated_at = datetime.now().isoformat()
+    
+    def mark_error(self, error_message: str, duration_ms: int = None):
+        """標記任務錯誤"""
+        self.status = CrawlStatus.ERROR
+        self.completed_at = datetime.now().isoformat()
+        self.error_message = error_message
+        if duration_ms:
+            self.duration_ms = duration_ms
+        self.updated_at = datetime.now().isoformat()
+    
+    def update_progress(self, total_processed: int = None, total_success: int = None, 
+                       total_errors: int = None, metadata: Dict[str, Any] = None):
+        """更新進度信息"""
+        if total_processed is not None:
+            self.total_processed = total_processed
+        if total_success is not None:
+            self.total_success = total_success
+        if total_errors is not None:
+            self.total_errors = total_errors
+        if metadata:
+            self.metadata.update(metadata)
+        self.updated_at = datetime.now().isoformat()

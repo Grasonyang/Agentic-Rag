@@ -27,7 +27,7 @@ class EmbeddingManager:
     """嵌入模型管理器"""
     
     def __init__(self, model_name: str = None):
-        self.model_name = model_name or os.getenv("EMBEDDING_MODEL", "BAAI/bge-large-zh-v1.5")
+        self.model_name = model_name
         self.model = model  # 使用已載入的全局模型
         
     def get_embedding(self, text: str) -> np.ndarray:

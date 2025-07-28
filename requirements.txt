@@ -1,31 +1,10 @@
+#env
+python-dotenv
+
 # Web Crawling
-crawl4ai>=0.2.0
-aiohttp>=3.8.0
-aiosignal>=1.2.0
-aiofiles>=23.0.0
+crawl4ai
+requests
 
-# Database
-supabase>=2.0.0
-psycopg2-binary>=2.9.0
-python-dotenv>=1.0.0
-
-# Text Processing & Embeddings
-sentence-transformers>=2.7.0
-torch>=2.0.0
-transformers>=4.30.0
-
-# Data Processing
-numpy>=1.24.0
-pandas>=2.0.0
-
-# Development
-pytest>=7.0.0
-black>=23.0.0
-flake8>=6.0.0
-
-# XML Processing (built-in with Python)
-# xml.etree.ElementTree
-
-# Async Support
-asyncio
-typing-extensions>=4.5.0
+# db
+supabase
+psycopg2
