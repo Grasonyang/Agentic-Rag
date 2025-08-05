@@ -17,8 +17,8 @@ getSiteMap.py - Sitemap 發現和解析腳本
 
 import argparse
 import asyncio
+import aiohttp
 import sys
-import os
 from pathlib import Path
 from typing import List, Set
 from urllib.parse import urljoin, urlparse
@@ -26,55 +26,80 @@ from urllib.parse import urljoin, urlparse
 # 添加專案根目錄到 Python 路徑
 sys.path.append(str(Path(__file__).parent.parent))
 
-# 導入本專案模組
-try:
-    from spider.crawlers.sitemap_parser import SitemapParser
-    from database.client import SupabaseClient
-    from database.models import SitemapModel, SitemapType, CrawlStatus
-    from scripts.utils import ScriptRunner, ScriptUtils, DatabaseChecker
-except ImportError as e:
-    print(f"❌ 導入模組失敗: {e}")
-    print("請確認您在專案根目錄執行此腳本")
-    sys.exit(1)
+from scripts.utils import ScriptRunner
 
 
 class SitemapDiscovery(ScriptRunner):
     """Sitemap 發現和管理類"""
     
-    def __init__(self, output_file: str = "sitemaps.txt"):
+    def __init__(self):
         super().__init__("sitemap_discovery")
-        self.parser = SitemapParser()
-        self.output_file = output_file
         self.discovered_sitemaps: Set[str] = set()
-        self.sitemap_hierarchy: List[dict] = []
+    
+    def setup_arguments(self, parser: argparse.ArgumentParser):
+        """設置命令行參數"""
+        parser.add_argument('--url', required=True, help='目標網站 URL')
+        parser.add_argument('--output', default='sitemaps.txt', help='輸出文件名')
+        parser.add_argument('--save-db', action='store_true', help='將結果保存到數據庫')
+    
+    async def run_script(self, args: argparse.Namespace) -> bool:
+        """執行腳本主邏輯"""
+        try:
+            self.log_info(f"開始發現 {args.url} 的 Sitemap")
+            
+            # 發現 sitemaps
+            robots_url = urljoin(args.url, '/robots.txt')
+            sitemaps = await self.discover_sitemaps(robots_url)
+            
+            if not sitemaps:
+                self.log_warning("未發現任何 Sitemap")
+                return False
+            
+            self.stats.set_custom_stat("發現的 Sitemap 數量", len(sitemaps))
+            
+            # 保存到文件
+            output_path = self.save_sitemaps_to_file(sitemaps, args.output)
+            self.log_success(f"Sitemap 列表已保存到: {output_path}")
+            
+            # 可選：保存到數據庫
+            if args.save_db:
+                await self.save_sitemaps_to_db(sitemaps, args.url)
+                self.log_success("Sitemap 列表已保存到數據庫")
+            
+            return True
+            
+        except Exception as e:
+            self.log_error("Sitemap 發現失敗", e)
+            return False
     
     async def discover_sitemaps(self, robots_url: str) -> List[str]:
         """從 robots.txt 發現 sitemap"""
-        print(f"🤖 正在解析 robots.txt: {robots_url}")
+        self.log_info(f"正在解析 robots.txt: {robots_url}")
         
         try:
             sitemaps = await self._parse_robots_txt(robots_url)
             
             if not sitemaps:
-                print("⚠️ 未在 robots.txt 中找到 Sitemap 條目，嘗試常見路徑")
+                self.log_warning("未在 robots.txt 中找到 Sitemap 條目，嘗試常見路徑")
                 # 嘗試常見的 sitemap 路徑
                 base_url = robots_url.replace('/robots.txt', '')
                 common_paths = ['/sitemap.xml', '/sitemap_index.xml', '/sitemapindex.xml']
                 
                 for path in common_paths:
                     potential_url = base_url + path
-                    print(f"   � 檢查: {potential_url}")
-                    # 這裡可以添加檢查邏輯
+                    self.log_info(f"檢查: {potential_url}")
+                    if await self._check_sitemap_exists(potential_url):
+                        sitemaps.append(potential_url)
+                        self.log_success(f"發現 Sitemap: {potential_url}")
                 
             return sitemaps
             
         except Exception as e:
-            raise Exception(f"解析 robots.txt 失敗: {e}")
+            self.log_error(f"解析 robots.txt 失敗", e)
+            raise
     
     async def _parse_robots_txt(self, robots_url: str) -> List[str]:
         """解析 robots.txt 文件提取 sitemap URL"""
-        import aiohttp
-        
         sitemaps = []
         
         try:
@@ -83,210 +108,82 @@ class SitemapDiscovery(ScriptRunner):
                     if response.status == 200:
                         text = await response.text()
                         
-                        # 解析每一行查找 Sitemap 條目
                         for line in text.split('\n'):
                             line = line.strip()
                             if line.lower().startswith('sitemap:'):
-                                sitemap_url = line[8:].strip()  # 移除 'Sitemap:' 前綴
+                                sitemap_url = line.split(':', 1)[1].strip()
                                 if sitemap_url:
                                     sitemaps.append(sitemap_url)
-                                    print(f"   ✅ 發現 Sitemap: {sitemap_url}")
+                                    self.discovered_sitemaps.add(sitemap_url)
+                                    self.log_success(f"發現 Sitemap: {sitemap_url}")
                     else:
-                        raise Exception(f"HTTP {response.status}: 無法訪問 robots.txt")
+                        self.log_warning(f"無法訪問 robots.txt: HTTP {response.status}")
                         
         except Exception as e:
-            raise Exception(f"讀取 robots.txt 失敗: {e}")
+            self.log_error(f"讀取 robots.txt 失敗", e)
+            raise
         
         return sitemaps
     
-    async def analyze_sitemap_hierarchy(self, sitemap_urls: List[str]) -> None:
-        """分析 Sitemap 層次結構"""
-        print(f"\n🔍 正在分析 Sitemap 層次結構...")
-        
-        for sitemap_url in sitemap_urls:
-            try:
-                # 檢查是否為 Sitemap Index
-                sitemap_info = await self.parser.get_sitemap_info(sitemap_url)
-                
-                sitemap_data = {
-                    'url': sitemap_url,
-                    'type': sitemap_info.get('type', 'unknown'),
-                    'url_count': sitemap_info.get('url_count', 0),
-                    'last_modified': sitemap_info.get('lastmod'),
-                    'sub_sitemaps': []
-                }
-                
-                # 如果是 Sitemap Index，獲取子 Sitemap
-                if sitemap_info.get('type') == 'sitemapindex':
-                    print(f"📚 {sitemap_url} 是 Sitemap Index")
-                    sub_sitemaps = await self.parser.get_sub_sitemaps(sitemap_url)
-                    sitemap_data['sub_sitemaps'] = sub_sitemaps
-                    
-                    for sub_sitemap in sub_sitemaps:
-                        self.discovered_sitemaps.add(sub_sitemap)
-                        print(f"   └── 📄 {sub_sitemap}")
-                else:
-                    print(f"📄 {sitemap_url} 包含 {sitemap_data['url_count']} 個 URL")
-                
-                self.sitemap_hierarchy.append(sitemap_data)
-                
-            except Exception as e:
-                print(f"⚠️ 分析 {sitemap_url} 時出錯: {e}")
-                # 仍然添加到列表中，但標記為錯誤
-                self.sitemap_hierarchy.append({
-                    'url': sitemap_url,
-                    'type': 'error',
-                    'error': str(e),
-                    'url_count': 0,
-                    'sub_sitemaps': []
-                })
-    
-    async def save_to_database(self) -> None:
-        """保存 Sitemap 資訊到資料庫"""
-        print(f"\n💾 正在保存 {len(self.sitemap_hierarchy)} 個 Sitemap 到資料庫...")
-        
+    async def _check_sitemap_exists(self, url: str) -> bool:
+        """檢查 sitemap URL 是否存在"""
         try:
-            supabase = self.db_client.get_client()
-            
-            for sitemap_data in self.sitemap_hierarchy:
-                # 創建 Sitemap 模型
-                sitemap_model = SitemapModel(
-                    url=sitemap_data['url'],
-                    sitemap_type=SitemapType.SITEMAPINDEX if sitemap_data['type'] == 'sitemapindex' else SitemapType.SITEMAP,
-                    status=CrawlStatus.COMPLETED if sitemap_data['type'] != 'error' else CrawlStatus.ERROR,
-                    urls_count=sitemap_data['url_count'],
-                    metadata={
-                        'discovered_from': 'robots.txt',
-                        'hierarchy_level': 0,
-                        'sub_sitemaps_count': len(sitemap_data.get('sub_sitemaps', [])),
-                        'analysis_timestamp': asyncio.get_event_loop().time()
-                    }
-                )
-                
-                if sitemap_data['type'] == 'error':
-                    sitemap_model.error_message = sitemap_data.get('error', 'Unknown error')
-                
-                # 保存到資料庫
-                result = supabase.from_('sitemaps').upsert(
-                    sitemap_model.to_dict(),
-                    on_conflict='url'
-                ).execute()
-                
-                if result.data:
-                    print(f"✅ 已保存: {sitemap_data['url']}")
-                else:
-                    print(f"⚠️ 保存失敗: {sitemap_data['url']}")
-        
-        except Exception as e:
-            print(f"❌ 資料庫保存失敗: {e}")
+            async with aiohttp.ClientSession() as session:
+                async with session.head(url) as response:
+                    return response.status == 200
+        except:
+            return False
     
-    def save_to_file(self) -> None:
-        """保存 Sitemap 清單到文件"""
-        print(f"\n📁 正在保存 Sitemap 清單到 {self.output_file}...")
+    def save_sitemaps_to_file(self, sitemaps: List[str], output_filename: str) -> str:
+        """保存 sitemap 列表到文件"""
+        content = f"# Sitemap 發現結果\n"
+        content += f"# 生成時間: {self.stats.start_time.isoformat()}\n"
+        content += f"# 總數量: {len(sitemaps)}\n\n"
         
+        for i, sitemap_url in enumerate(sitemaps, 1):
+            content += f"{i}. {sitemap_url}\n"
+        
+        return self.file_manager.save_text_file(content, output_filename)
+    
+    async def save_sitemaps_to_db(self, sitemaps: List[str], base_url: str):
+        """保存 sitemap 列表到資料庫"""
         try:
-            with open(self.output_file, 'w', encoding='utf-8') as f:
-                # 寫入標題
-                f.write("# Discovered Sitemaps\n")
-                f.write(f"# Generated by getSiteMap.py\n")
-                f.write(f"# Total: {len(self.discovered_sitemaps)} sitemaps\n\n")
-                
-                # 按層次結構寫入
-                for sitemap_data in self.sitemap_hierarchy:
-                    f.write(f"{sitemap_data['url']}\n")
-                    
-                    # 如果有子 Sitemap，縮排寫入
-                    for sub_sitemap in sitemap_data.get('sub_sitemaps', []):
-                        f.write(f"  {sub_sitemap}\n")
-                
-                # 如果有其他發現的 sitemap（容錯處理）
-                written_urls = set()
-                for sitemap_data in self.sitemap_hierarchy:
-                    written_urls.add(sitemap_data['url'])
-                    written_urls.update(sitemap_data.get('sub_sitemaps', []))
-                
-                remaining_sitemaps = self.discovered_sitemaps - written_urls
-                if remaining_sitemaps:
-                    f.write("\n# Additional discovered sitemaps\n")
-                    for sitemap in sorted(remaining_sitemaps):
-                        f.write(f"{sitemap}\n")
+            from database.client import SupabaseClient
+            from database.models import SitemapModel, SitemapType, CrawlStatus
             
-            print(f"✅ Sitemap 清單已保存到 {self.output_file}")
-            print(f"📊 總計: {len(self.discovered_sitemaps)} 個 Sitemap")
+            supabase_client = SupabaseClient()
+            supabase = supabase_client.get_client()
+            
+            saved_count = 0
+            for sitemap_url in sitemaps:
+                try:
+                    sitemap_model = SitemapModel(
+                        url=sitemap_url,
+                        sitemap_type=SitemapType.SITEMAP,
+                        status=CrawlStatus.PENDING,
+                        metadata={
+                            'discovered_from': base_url,
+                            'discovery_timestamp': self.stats.start_time.isoformat()
+                        }
+                    )
+                    
+                    result = supabase.from_('sitemaps').upsert(
+                        sitemap_model.to_dict(), on_conflict='url'
+                    ).execute()
+                    
+                    if result.data:
+                        saved_count += 1
+                        
+                except Exception as e:
+                    self.log_warning(f"保存 sitemap {sitemap_url} 失敗: {e}")
+            
+            self.stats.set_custom_stat("保存到資料庫的數量", saved_count)
             
         except Exception as e:
-            print(f"❌ 文件保存失敗: {e}")
-    
-    def print_summary(self) -> None:
-        """打印發現摘要"""
-        print(f"\n📋 Sitemap 發現摘要:")
-        print(f"=" * 50)
-        
-        total_urls = 0
-        for sitemap_data in self.sitemap_hierarchy:
-            sitemap_type = sitemap_data['type']
-            url_count = sitemap_data['url_count']
-            total_urls += url_count
-            
-            status_icon = "✅" if sitemap_type != 'error' else "❌"
-            type_label = {
-                'sitemapindex': 'Sitemap Index',
-                'sitemap': 'Sitemap',
-                'urlset': 'URL Set',
-                'error': 'Error'
-            }.get(sitemap_type, 'Unknown')
-            
-            print(f"{status_icon} {type_label}: {url_count} URLs")
-            print(f"   📍 {sitemap_data['url']}")
-            
-            if sitemap_data.get('sub_sitemaps'):
-                print(f"   📚 包含 {len(sitemap_data['sub_sitemaps'])} 個子 Sitemap")
-        
-        print(f"=" * 50)
-        print(f"🎯 總計: {len(self.discovered_sitemaps)} 個 Sitemap")
-        print(f"🔢 預估 URL 總數: {total_urls}")
-
-
-async def main():
-    """主函數"""
-    parser = argparse.ArgumentParser(description='Sitemap 發現和解析工具')
-    parser.add_argument('--url', required=True, help='要解析的網站 URL')
-    parser.add_argument('--output', default='sitemaps.txt', help='輸出文件名稱')
-    parser.add_argument('--no-db', action='store_true', help='不保存到資料庫')
-    parser.add_argument('--verbose', '-v', action='store_true', help='詳細輸出')
-    
-    args = parser.parse_args()
-    
-    print(f"🚀 開始 Sitemap 發現流程")
-    print(f"🎯 目標網站: {args.url}")
-    print(f"📁 輸出文件: {args.output}")
-    
-    discovery = SitemapDiscovery(args.output)
-    
-    try:
-        # 1. 從 robots.txt 發現 Sitemap
-        initial_sitemaps = await discovery.discover_sitemaps(args.url)
-        
-        # 2. 分析 Sitemap 層次結構
-        await discovery.analyze_sitemap_hierarchy(initial_sitemaps)
-        
-        # 3. 保存到資料庫（如果啟用）
-        if not args.no_db:
-            await discovery.save_to_database()
-        
-        # 4. 保存到文件
-        discovery.save_to_file()
-        
-        # 5. 打印摘要
-        discovery.print_summary()
-        
-        print(f"\n🎉 Sitemap 發現完成！")
-        print(f"📄 下一步: python scripts/getUrls.py --sitemap-list {args.output}")
-        
-    except Exception as e:
-        print(f"❌ 執行失敗: {e}")
-        sys.exit(1)
+            self.log_error("保存到資料庫失敗", e)
+            raise
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    from scripts.utils import run_script
+    run_script(SitemapDiscovery)

@@ -7,11 +7,7 @@ import os
 import logging
 from pathlib import Path
 from typing import Optional, List
-from dotenv import load_dotenv
 from client import SupabaseClient
-
-# 載入環境變數
-load_dotenv()
 
 # 設置日誌
 logger = logging.getLogger(__name__)

@@ -1,6 +1,3 @@
-#env
-python-dotenv
-
 # Web Crawling
 crawl4ai
 requests

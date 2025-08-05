@@ -125,15 +125,15 @@ get-sitemap:
 	@echo "目標網站: $(URL)"
 	@python3 -c "import sys; sys.path.append('.'); from spider.rag_spider import discover_sitemaps; discover_sitemaps('$(URL)', '$(SITEMAP_LIST)')"
 
-# 使用 .env 中的 TARGET_URLS 進行完整工作流程
+# 使用環境變數中的 TARGET_URLS 進行完整工作流程
 run-env-workflow:
-	@echo "🚀 使用 .env 設定執行 RAG 工作流程..."
+	@echo "🚀 使用環境變數執行 RAG 工作流程..."
 	@echo "====================================="
-	@python3 -c "import os; from dotenv import load_dotenv; load_dotenv(); print(f'目標 URLs: {os.getenv(\"TARGET_URLS\", \"未設定\")}')"
+	@python3 -c "import os; print(f'目標 URLs: {os.getenv(\"TARGET_URLS\", \"未設定\")}')"
 	@echo "====================================="
 	@echo ""
-	@echo "步驟 1: 從 .env 讀取並發現 Sitemap"
-	@python3 -c "import sys, os; sys.path.append('.'); from dotenv import load_dotenv; load_dotenv(); from spider.rag_spider import discover_sitemaps; target_urls = os.getenv('TARGET_URLS', ''); [discover_sitemaps(url.strip(), 'sitemaps.txt') for url in target_urls.split(',') if url.strip()]"
+	@echo "步驟 1: 從環境變數讀取並發現 Sitemap"
+	@python3 -c "import sys, os; sys.path.append('.'); from spider.rag_spider import discover_sitemaps; target_urls = os.getenv('TARGET_URLS', ''); [discover_sitemaps(url.strip(), 'sitemaps.txt') for url in target_urls.split(',') if url.strip()]"
 	@echo ""
 	@echo "步驟 2: 提取 URL"
 	@make get-urls SITEMAP_LIST=$(SITEMAP_LIST) MAX_URLS=$(MAX_URLS)

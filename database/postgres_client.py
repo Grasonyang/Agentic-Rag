@@ -14,7 +14,6 @@ import sys
 import psycopg2
 import psycopg2.extras
 from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
-from dotenv import load_dotenv
 from pathlib import Path
 from typing import Dict, List, Any, Optional, Tuple
 import logging
@@ -25,36 +24,25 @@ logger = logging.getLogger(__name__)
 class PostgreSQLClient:
     """PostgreSQL 直接連接客戶端"""
     
-    def __init__(self, env_file: str = ".env"):
+    def __init__(self, config_dict: Optional[Dict[str, str]] = None):
         """
         初始化 PostgreSQL 客戶端
         
         Args:
-            env_file: 環境變量文件路徑
+            config_dict: 配置字典，包含 host, port, database, user, password
         """
-        self.connection = None
-        self.cursor = None
-        
-        # 載入環境變量
-        env_path = Path(__file__).parent.parent.parent / env_file
-        if env_path.exists():
-            load_dotenv(env_path)
+        if config_dict:
+            # 使用提供的配置
+            self.connection_params = config_dict
         else:
-            load_dotenv()  # 嘗試從當前目錄載入
-        
-        # 獲取連接參數
-        self.connection_params = {
-            "user": os.getenv("DB_USER"),
-            "password": os.getenv("DB_PASSWORD"),
-            "host": os.getenv("DB_HOST"),
-            "port": os.getenv("DB_PORT", "5432"),
-            "dbname": os.getenv("DB_NAME")
-        }
-        
-        # 驗證連接參數
-        missing_params = [k for k, v in self.connection_params.items() if not v]
-        if missing_params:
-            raise ValueError(f"缺少必要的連接參數: {missing_params}")
+            # 從環境變數讀取配置
+            self.connection_params = {
+                'host': os.getenv('DB_HOST', 'localhost'),
+                'port': int(os.getenv('DB_PORT', '5432')),
+                'database': os.getenv('DB_NAME', 'postgres'),
+                'user': os.getenv('DB_USER', 'postgres'),
+                'password': os.getenv('DB_PASSWORD', 'postgres')
+            }
     
     def connect(self) -> bool:
         """

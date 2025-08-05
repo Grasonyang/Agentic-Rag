@@ -98,8 +98,9 @@ Agentic-Rag/
 ├── 📁 scripts/                # 工具腳本
 ├── 📁 embedding/              # 嵌入模型模組
 │   └── embedding.py           # 向量嵌入管理器
-├── 📄 .env                    # 環境變數配置
-├── 📄 .env.template           # 環境變數模板
+├── 📄 config.json.template    # 配置文件模板
+├── 📄 config_manager.py       # 配置管理器
+├── 📄 ENV_SETUP.md           # 環境變數設置指南
 ├── 📄 Makefile                # 自動化指令
 ├── 📄 requirements.txt        # Python 依賴清單
 ├── 📄 docker-compose.yml      # Docker 編排配置
@@ -107,6 +108,48 @@ Agentic-Rag/
 ```
 
 ## 🚀 快速開始
+
+### 1. 環境配置
+
+本項目已移除 .env 文件依賴，使用環境變數和 JSON 配置文件：
+
+#### 設置必需的環境變數：
+```bash
+export SUPABASE_URL="your_supabase_url"
+export ANON_KEY="your_supabase_anon_key"
+export SERVICE_ROLE_KEY="your_supabase_service_role_key"  # 可選
+```
+
+#### 可選配置：
+```bash
+export TARGET_URLS="https://example.com,https://example2.com"
+export CRAWLER_DELAY=2.5
+export CRAWLER_MAX_CONCURRENT=10
+```
+
+詳細設置指南請參考 [ENV_SETUP.md](ENV_SETUP.md)
+
+### 2. 安裝依賴
+
+```bash
+pip install -r requirements.txt
+```
+
+### 3. 測試配置
+
+```bash
+python test_no_env.py
+```
+
+### 4. 運行爬蟲
+
+```bash
+# 使用 make 指令 (推薦)
+make spider
+
+# 或直接運行
+python -m spider.rag_spider
+```
 
 
 ## 💡 使用範例

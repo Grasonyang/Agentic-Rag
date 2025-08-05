@@ -29,30 +29,14 @@ import re
 # 添加專案根目錄到 Python 路徑
 sys.path.append(str(Path(__file__).parent.parent))
 
-# 設置日志
-def setup_logging():
-    """設置日志配置"""
-    log_dir = os.path.join(os.path.dirname(__file__), 'logs')
-    os.makedirs(log_dir, exist_ok=True)
-    
-    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-    log_file = os.path.join(log_dir, f'chunking_{timestamp}.log')
-    
-    logging.basicConfig(
-        level=logging.INFO,
-        format='%(asctime)s - %(levelname)s - %(message)s',
-        handlers=[
-            logging.FileHandler(log_file, encoding='utf-8'),
-            logging.StreamHandler()
-        ]
-    )
-    
-    return logging.getLogger(__name__)
-
-from spider.crawlers.simple_crawler import SimpleWebCrawler
+# 導入配置管理和增強版工具
+from config_manager import get_config
+from spider.utils.enhanced_logger import SpiderLogger
+from spider.utils.connection_manager import EnhancedConnectionManager
+from spider.utils.database_manager import EnhancedDatabaseManager
+from spider.crawlers.web_crawler import WebCrawler
 from spider.chunking.chunker_factory import ChunkerFactory
-from database.client import SupabaseClient
-from database.models_simplified import ArticleModel, ChunkModel
+from database.models import ArticleModel, ChunkModel
 
 
 class ContentProcessor:
@@ -60,13 +44,39 @@ class ContentProcessor:
     
     def __init__(self, output_file: str = "chunks.txt", chunker_type: str = "sliding_window", 
                  chunker_params: Dict = None, max_workers: int = 3):
-        self.crawler = SimpleWebCrawler()
-        self.db_client = SupabaseClient()
+        
+        # 初始化配置
+        self.config = get_config()
         self.output_file = output_file
         self.chunker_type = chunker_type
         self.chunker_params = chunker_params or {}
         self.max_workers = max_workers
-        self.logger = logging.getLogger(__name__)
+        
+        # 初始化增強版日誌系統
+        self.logger = SpiderLogger("content_processor")
+        
+        # 初始化增強版爬蟲
+        try:
+            from spider.utils.retry_manager import RetryConfig
+            from spider.utils.rate_limiter import RateLimitConfig
+            
+            retry_config = RetryConfig(max_retries=3, base_delay=1.0, max_delay=30.0)
+            rate_config = RateLimitConfig(requests_per_second=0.5, adaptive=True)
+            
+            self.crawler = WebCrawler(retry_config=retry_config, rate_config=rate_config)
+            self.logger.info("網頁爬蟲初始化成功")
+        except Exception as e:
+            self.logger.error(f"爬蟲初始化失敗: {e}")
+            raise
+        
+        # 初始化增強版資料庫管理器
+        try:
+            db_config = self.config.get_database_config()
+            self.db_manager = EnhancedDatabaseManager(db_config)
+            self.logger.info("資料庫管理器初始化成功")
+        except Exception as e:
+            self.logger.error(f"資料庫管理器初始化失敗: {e}")
+            raise
         
         # 初始化分塊器
         try:
@@ -332,8 +342,6 @@ class ContentProcessor:
     async def _save_article_and_chunks(self, article_data: Dict, chunks: List[Dict]) -> None:
         """保存文章和分塊到資料庫"""
         try:
-            supabase = self.db_client.get_client()
-            
             # 準備文章模型
             article_model = ArticleModel(
                 url=article_data['url'],
@@ -345,13 +353,8 @@ class ContentProcessor:
             # 設置自定義 ID
             article_model.id = article_data['id']
             
-            # 保存文章
-            result = supabase.from_('articles').upsert(
-                article_model.to_dict(), on_conflict='id'
-            ).execute()
-            
-            if not result.data:
-                raise Exception("文章保存失敗")
+            # 使用增強版資料庫管理器保存文章
+            await self.db_manager.create_article(article_model)
             
             # 準備分塊模型
             chunk_models = []
@@ -364,18 +367,14 @@ class ContentProcessor:
                 )
                 # 設置自定義 ID
                 chunk_model.id = chunk_data['id']
-                chunk_models.append(chunk_model.to_dict())
+                chunk_models.append(chunk_model)
             
             # 批量保存分塊
             if chunk_models:
-                result = supabase.from_('article_chunks').upsert(
-                    chunk_models, on_conflict='id'
-                ).execute()
-                
-                if not result.data:
-                    raise Exception("分塊保存失敗")
+                await self.db_manager.create_chunks(chunk_models)
             
         except Exception as e:
+            self.logger.error(f"資料庫保存失敗: {e}")
             raise Exception(f"資料庫保存失敗: {e}")
     
     async def generate_chunks_list(self) -> None:
@@ -488,7 +487,7 @@ class ContentProcessor:
 async def main():
     """主函數"""
     # 初始化日志
-    logger = setup_logging()
+    logger = SpiderLogger("content_processor_main")
     logger.info("開始內容爬取和分塊流程")
     
     parser = argparse.ArgumentParser(description='網頁內容爬取和分塊工具')
@@ -562,7 +561,7 @@ async def main():
             print(f"\n⚠️ 未生成任何分塊，請檢查 URL 清單或網絡連接")
         
     except Exception as e:
-        logger.error(f"執行失敗: {e}", exc_info=True)
+        logger.error(f"執行失敗: {e}")
         print(f"❌ 執行失敗: {e}")
         sys.exit(1)
 

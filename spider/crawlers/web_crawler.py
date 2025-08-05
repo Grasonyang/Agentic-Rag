@@ -22,10 +22,6 @@ from ..utils.rate_limiter import AdaptiveRateLimiter, RateLimitConfig
 # 修復相對導入問題
 import sys
 import os
-from dotenv import load_dotenv
-
-# 載入環境變數
-load_dotenv()
 
 # 從環境變數讀取配置
 RATE_LIMIT_MAX_RETRIES = int(os.getenv('RATE_LIMIT_MAX_RETRIES', '2'))

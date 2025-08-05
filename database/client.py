@@ -8,11 +8,14 @@ import logging
 import base64
 import json
 from typing import Optional
-from dotenv import load_dotenv
 from supabase import create_client, Client
 
-# 載入環境變數
-load_dotenv()
+import os
+import logging
+import base64
+import json
+from typing import Optional
+from supabase import create_client, Client
 
 # 設置日誌
 logger = logging.getLogger(__name__)
@@ -20,17 +23,21 @@ logger = logging.getLogger(__name__)
 class SupabaseClient:
     """Supabase 客戶端管理器"""
     
-    def __init__(self):
+    def __init__(self, url: Optional[str] = None, key: Optional[str] = None):
         """初始化 Supabase 客戶端"""
-        # 從環境變數獲取配置
-        self.url = os.getenv("SUPABASE_URL")
+        # 從參數或環境變數獲取配置
+        self.url = url or os.getenv("SUPABASE_URL")
         
         # 優先使用 SERVICE_ROLE_KEY，如果不行則使用 ANON_KEY
         self.service_key = os.getenv("SERVICE_ROLE_KEY")
         self.anon_key = os.getenv("ANON_KEY")
         
-        # 默認使用 ANON_KEY，因為我們的權限設置允許 anon 角色訪問
-        self.key = self.anon_key or self.service_key
+        # 使用提供的 key 或默認使用 ANON_KEY
+        self.key = key or self.anon_key or self.service_key
+        
+        if not self.url:
+            logger.error("❌ 未找到 SUPABASE_URL 環境變數")
+            raise ValueError("SUPABASE_URL 環境變數必須設置")
         
         if not self.key:
             logger.error("❌ 未找到 ANON_KEY 或 SERVICE_ROLE_KEY 環境變數")
