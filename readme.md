@@ -30,22 +30,39 @@ Agentic RAG 框架提供了一套完整的工具鏈，從網路數據的自動�
 本框架採用模組化設計，主要由兩大容器協同工作，實現了應用邏輯與數據存儲的解耦。
 
 ```mermaid
-graph TD
-    subgraph "Agentic RAG 應用容器 (Python)"
-        A[🕷️ Web Crawler] --> B{🧩 Text Processor};
-        B --> C[🤖 Embedding Model];
-        C --> D[📤 DB Operations];
-    end
+flowchart TB
+ subgraph WorkerCluster["Worker Nodes per domain"]
+    direction LR
+        WorkerA["Worker Node - siteA.com"]
+        WorkerB["Worker Node - siteB.org"]
+  end
+ subgraph RAGSystem["Agentic RAG System - Master Worker Architecture"]
+    direction TB
+        Master["Master Node"]
+        WorkerCluster
+  end
+    Crawl4ai["crawl4ai - crawler service"] -. Scraped content .-> Master
+    Master -. Send to embed .-> WorkerA & WorkerB
+    WorkerA -. Store embeddings .-> Supabase["Supabase (pgvector + API)"]
+    WorkerB -. Store embeddings .-> Supabase
+    User["User"] -- Query API --> Master
+    Master -- Dispatch query --> WorkerA & WorkerB
+    WorkerA -- Vector search --> Supabase
+    WorkerB -- Vector search --> Supabase
+    WorkerA -- Return result --> Master
+    WorkerB -- Return result --> Master
+    Master -- Final answer --> User
 
-    subgraph "Supabase 數據容器 (PostgreSQL)"
-        E[🗄️ Vector Store] --> F{🔍 Search Functions};
-        F --> G[📊 Tables & Indices];
-    end
+     WorkerA:::Aqua
+     WorkerB:::Aqua
+     Master:::Rose
+     Crawl4ai:::Aqua
+     Crawl4ai:::Peach
+     User:::Peach
+    classDef Rose stroke-width:1px, stroke-dasharray:none, stroke:#FF5978, fill:#FFDFE5, color:#8E2236
+    classDef Aqua stroke-width:1px, stroke-dasharray:none, stroke:#46EDC8, fill:#DEFFF8, color:#378E7A
+    classDef Peach stroke-width:1px, stroke-dasharray:none, stroke:#FBB35A, fill:#FFEFDB, color:#8F632D
 
-    D -- "RPC (HTTP/REST)" --> E;
-
-    style A fill:#f9f,stroke:#333,stroke-width:2px
-    style E fill:#ccf,stroke:#333,stroke-width:2px
 ```
 
 ### 容器化架構
