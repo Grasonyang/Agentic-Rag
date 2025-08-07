@@ -1,7 +1,7 @@
 -- =============================================
--- RAG系统完整数据库架构 - 整合版本
+-- RAG系統完整資料庫架構 - 整合版本
 -- 版本: 2025.07.28
--- 描述: 包含核心表格、函数、视图和扩展功能
+-- 描述: 包含核心資料表、函式、視圖和擴充功能
 -- 
 -- 🚀 使用方式:
 -- 1. 直接執行此檔案即可建立完整的資料庫架構
@@ -11,15 +11,15 @@
 -- ⚠️ 注意: 此檔案包含所有功能，無需執行其他 SQL 檔案
 -- =============================================
 
--- 启用必要的扩展
+-- 啟用必要的擴充功能
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 CREATE EXTENSION IF NOT EXISTS vector;
 
 -- =============================================
--- 枚举类型定义
+-- 列舉類型定義
 -- =============================================
 
--- 爬取状态
+-- 爬取狀態
 DO $$
 BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'crawl_status_enum') THEN
@@ -27,7 +27,7 @@ BEGIN
     END IF;
 END$$;
 
--- 变更频率
+-- 變更頻率
 DO $$
 BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'changefreq_enum') THEN
@@ -36,10 +36,10 @@ BEGIN
 END$$;
 
 -- =============================================
--- 触发器函数
+-- 觸發器函式
 -- =============================================
 
--- 自动更新 updated_at 字段
+-- 自動更新 updated_at 欄位
 CREATE OR REPLACE FUNCTION update_updated_at_column()
 RETURNS TRIGGER AS $$
 BEGIN
@@ -48,7 +48,7 @@ BEGIN
 END;
 $$ LANGUAGE 'plpgsql';
 
--- 自动计算内容哈希和统计信息
+-- 自動計算內容雜湊 (content hash) 和統計資訊
 CREATE OR REPLACE FUNCTION update_content_hash()
 RETURNS TRIGGER AS $$
 BEGIN
@@ -67,15 +67,15 @@ END;
 $$ LANGUAGE 'plpgsql';
 
 -- =============================================
--- 核心表格
+-- 核心資料表
 -- =============================================
 
--- 1. 发现的URLs表 (从sitemap解析的URL)
+-- 1. 發現的URLs資料表 (從sitemap解析的URL)
 CREATE TABLE IF NOT EXISTS discovered_urls (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     url TEXT UNIQUE NOT NULL,
     domain TEXT NOT NULL,
-    source_sitemap TEXT,                -- 来源sitemap URL
+    source_sitemap TEXT,                  -- 來源sitemap URL
     priority DECIMAL(2,1) CHECK (priority >= 0.0 AND priority <= 1.0),
     changefreq changefreq_enum,
     lastmod TIMESTAMP WITH TIME ZONE,
@@ -88,34 +88,34 @@ CREATE TABLE IF NOT EXISTS discovered_urls (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
--- 2. 文章表 (爬取的网页内容)
+-- 2. 文章資料表 (爬取的網頁內容)
 CREATE TABLE IF NOT EXISTS articles (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     url TEXT UNIQUE NOT NULL,
     title TEXT,
     content TEXT,
-    content_hash TEXT,                   -- 自动计算
-    word_count INTEGER DEFAULT 0,       -- 自动计算
+    content_hash TEXT,                     -- 自動計算
+    word_count INTEGER DEFAULT 0,         -- 自動計算
     crawled_from_url_id UUID REFERENCES discovered_urls(id) ON DELETE SET NULL,
     metadata JSONB DEFAULT '{}',
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
--- 3. 文章分块表 (文章内容的分块)
+-- 3. 文章分塊資料表 (文章內容的分塊)
 CREATE TABLE IF NOT EXISTS article_chunks (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     article_id UUID NOT NULL REFERENCES articles(id) ON DELETE CASCADE,
     content TEXT NOT NULL,
-    content_hash TEXT,                   -- 自动计算
-    embedding VECTOR(1024),              -- 向量嵌入
-    chunk_index INTEGER NOT NULL,       -- 在文章中的顺序
-    chunk_size INTEGER DEFAULT 0,       -- 自动计算
+    content_hash TEXT,                     -- 自動計算
+    embedding VECTOR(1024),                -- 向量嵌入
+    chunk_index INTEGER NOT NULL,         -- 在文章中的順序
+    chunk_size INTEGER DEFAULT 0,         -- 自動計算
     metadata JSONB DEFAULT '{}',
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
--- 4. Sitemap表 (sitemap文件记录)
+-- 4. Sitemap資料表 (sitemap檔案記錄)
 CREATE TABLE IF NOT EXISTS sitemaps (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     url TEXT UNIQUE NOT NULL,
@@ -130,7 +130,7 @@ CREATE TABLE IF NOT EXISTS sitemaps (
 );
 
 -- =============================================
--- 索引优化
+-- 索引最佳化
 -- =============================================
 
 -- discovered_urls 索引
@@ -152,7 +152,7 @@ CREATE INDEX IF NOT EXISTS idx_chunks_chunk_index ON article_chunks(chunk_index)
 CREATE INDEX IF NOT EXISTS idx_chunks_content_hash ON article_chunks(content_hash);
 CREATE INDEX IF NOT EXISTS idx_chunks_created_at ON article_chunks(created_at);
 
--- 向量搜索索引 (HNSW算法，用于相似性搜索)
+-- 向量搜尋索引 (HNSW演算法，用於相似性搜尋)
 CREATE INDEX IF NOT EXISTS idx_chunks_embedding_hnsw ON article_chunks 
 USING hnsw (embedding vector_cosine_ops) WITH (m = 16, ef_construction = 64);
 
@@ -163,17 +163,17 @@ CREATE INDEX IF NOT EXISTS idx_sitemaps_status ON sitemaps(status);
 CREATE INDEX IF NOT EXISTS idx_sitemaps_created_at ON sitemaps(created_at);
 
 -- =============================================
--- 触发器设置
+-- 觸發器設定
 -- =============================================
 
--- discovered_urls 表触发器
+-- discovered_urls 資料表觸發器
 DROP TRIGGER IF EXISTS trigger_discovered_urls_updated_at ON discovered_urls;
 CREATE TRIGGER trigger_discovered_urls_updated_at
     BEFORE UPDATE ON discovered_urls
     FOR EACH ROW
     EXECUTE FUNCTION update_updated_at_column();
 
--- articles 表触发器
+-- articles 資料表觸發器
 DROP TRIGGER IF EXISTS trigger_articles_updated_at ON articles;
 CREATE TRIGGER trigger_articles_updated_at
     BEFORE UPDATE ON articles
@@ -186,14 +186,14 @@ CREATE TRIGGER trigger_articles_content_hash
     FOR EACH ROW
     EXECUTE FUNCTION update_content_hash();
 
--- article_chunks 表触发器
+-- article_chunks 資料表觸發器
 DROP TRIGGER IF EXISTS trigger_chunks_content_hash ON article_chunks;
 CREATE TRIGGER trigger_chunks_content_hash
     BEFORE INSERT OR UPDATE ON article_chunks
     FOR EACH ROW
     EXECUTE FUNCTION update_content_hash();
 
--- sitemaps 表触发器
+-- sitemaps 資料表觸發器
 DROP TRIGGER IF EXISTS trigger_sitemaps_updated_at ON sitemaps;
 CREATE TRIGGER trigger_sitemaps_updated_at
     BEFORE UPDATE ON sitemaps
@@ -201,26 +201,26 @@ CREATE TRIGGER trigger_sitemaps_updated_at
     EXECUTE FUNCTION update_updated_at_column();
 
 -- =============================================
--- 权限设置和 RLS 政策
+-- 權限設定和 RLS 政策
 -- =============================================
 
--- 为所有角色授予必要权限
+-- 為所有角色授予必要權限
 GRANT USAGE ON SCHEMA public TO anon, authenticated, service_role;
 GRANT ALL ON ALL TABLES IN SCHEMA public TO anon, authenticated, service_role;
 GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO anon, authenticated, service_role;
 GRANT ALL ON ALL FUNCTIONS IN SCHEMA public TO anon, authenticated, service_role;
 
 -- =============================================
--- RLS (Row Level Security) 政策設定
+-- RLS (列級別安全性) 政策設定
 -- =============================================
 
--- 啟用 RLS 對所有表格
+-- 啟用 RLS 對所有資料表
 ALTER TABLE discovered_urls ENABLE ROW LEVEL SECURITY;
 ALTER TABLE articles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE article_chunks ENABLE ROW LEVEL SECURITY;
 ALTER TABLE sitemaps ENABLE ROW LEVEL SECURITY;
 
--- discovered_urls 表的 RLS 政策
+-- discovered_urls 資料表的 RLS 政策
 CREATE POLICY "Enable read access for all users" ON discovered_urls
     FOR SELECT USING (true);
 
@@ -233,7 +233,7 @@ CREATE POLICY "Enable update for authenticated users" ON discovered_urls
 CREATE POLICY "Enable delete for authenticated users" ON discovered_urls
     FOR DELETE USING (true);
 
--- articles 表的 RLS 政策
+-- articles 資料表的 RLS 政策
 CREATE POLICY "Enable read access for all users" ON articles
     FOR SELECT USING (true);
 
@@ -246,7 +246,7 @@ CREATE POLICY "Enable update for authenticated users" ON articles
 CREATE POLICY "Enable delete for authenticated users" ON articles
     FOR DELETE USING (true);
 
--- article_chunks 表的 RLS 政策
+-- article_chunks 資料表的 RLS 政策
 CREATE POLICY "Enable read access for all users" ON article_chunks
     FOR SELECT USING (true);
 
@@ -259,7 +259,7 @@ CREATE POLICY "Enable update for authenticated users" ON article_chunks
 CREATE POLICY "Enable delete for authenticated users" ON article_chunks
     FOR DELETE USING (true);
 
--- sitemaps 表的 RLS 政策
+-- sitemaps 資料表的 RLS 政策
 CREATE POLICY "Enable read access for all users" ON sitemaps
     FOR SELECT USING (true);
 
@@ -273,10 +273,10 @@ CREATE POLICY "Enable delete for authenticated users" ON sitemaps
     FOR DELETE USING (true);
 
 -- =============================================
--- 实用查询函数
+-- 實用查詢函式
 -- =============================================
 
--- 获取数据库统计信息
+-- 取得資料庫統計資訊
 CREATE OR REPLACE FUNCTION get_db_stats()
 RETURNS TABLE (
     table_name TEXT,
@@ -297,7 +297,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- 清理所有数据
+-- 清理所有資料
 CREATE OR REPLACE FUNCTION clear_all_data()
 RETURNS VOID AS $$
 BEGIN
@@ -306,28 +306,28 @@ BEGIN
     TRUNCATE TABLE discovered_urls CASCADE;
     TRUNCATE TABLE sitemaps CASCADE;
     
-    RAISE NOTICE '所有表格数据已清除';
+    RAISE NOTICE '所有資料表資料已清除';
 END;
 $$ LANGUAGE plpgsql;
 
 -- =============================================
--- 完成信息
+-- 完成資訊
 -- =============================================
 
 DO $$
 BEGIN
-    RAISE NOTICE '=== RAG系统数据库架构部署完成 ===';
-    RAISE NOTICE '核心表格: discovered_urls, articles, article_chunks, sitemaps';
-    RAISE NOTICE '使用 SELECT * FROM get_db_stats(); 查看统计信息';
-    RAISE NOTICE '使用 SELECT clear_all_data(); 清空所有数据';
+    RAISE NOTICE '=== RAG系統資料庫架構部署完成 ===';
+    RAISE NOTICE '核心資料表: discovered_urls, articles, article_chunks, sitemaps';
+    RAISE NOTICE '使用 SELECT * FROM get_db_stats(); 查看統計資訊';
+    RAISE NOTICE '使用 SELECT clear_all_data(); 清空所有資料';
 END
 $$;
 
 -- =============================================
--- 擴展功能 - 額外的實用函數和視圖
+-- 擴充功能 - 額外的實用函式和視圖
 -- =============================================
 
--- 獲取域名統計信息
+-- 取得域名統計資訊
 CREATE OR REPLACE FUNCTION get_domain_stats()
 RETURNS TABLE (
     domain TEXT,
@@ -362,7 +362,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- 獲取爬取進度信息
+-- 取得爬取進度資訊
 CREATE OR REPLACE FUNCTION get_crawl_progress()
 RETURNS TABLE (
     total_discovered BIGINT,
@@ -397,7 +397,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- 搜索相似內容（使用向量相似度）
+-- 搜尋相似內容（使用向量相似度）
 CREATE OR REPLACE FUNCTION search_similar_content(
     query_embedding VECTOR(1024),
     similarity_threshold REAL DEFAULT 0.7,
@@ -439,10 +439,10 @@ DECLARE
     deleted_articles_count INTEGER := 0;
     deleted_chunks_count INTEGER := 0;
 BEGIN
-    -- 刪除重複文章的塊
+    -- 刪除重複文章的分塊
     WITH duplicate_articles AS (
         SELECT id, content_hash, 
-               ROW_NUMBER() OVER (PARTITION BY content_hash ORDER BY created_at) as rn
+                ROW_NUMBER() OVER (PARTITION BY content_hash ORDER BY created_at) as rn
         FROM articles 
         WHERE content_hash IS NOT NULL AND content_hash != ''
     ),
@@ -457,7 +457,7 @@ BEGIN
     -- 刪除重複文章
     WITH duplicate_articles AS (
         SELECT id, content_hash, 
-               ROW_NUMBER() OVER (PARTITION BY content_hash ORDER BY created_at) as rn
+                ROW_NUMBER() OVER (PARTITION BY content_hash ORDER BY created_at) as rn
         FROM articles 
         WHERE content_hash IS NOT NULL AND content_hash != ''
     )
@@ -470,7 +470,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- 獲取最近的錯誤信息
+-- 取得最近的錯誤資訊
 CREATE OR REPLACE FUNCTION get_recent_errors(limit_count INTEGER DEFAULT 50)
 RETURNS TABLE (
     error_type TEXT,
@@ -506,7 +506,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- 檢查數據完整性
+-- 檢查資料完整性
 CREATE OR REPLACE FUNCTION check_data_integrity()
 RETURNS TABLE (
     check_name TEXT,
@@ -515,18 +515,18 @@ RETURNS TABLE (
     description TEXT
 ) AS $$
 BEGIN
-    -- 檢查孤立的文章塊
+    -- 檢查孤立的文章分塊
     RETURN QUERY
     SELECT 
         'orphaned_chunks'::TEXT as check_name,
         CASE WHEN COUNT(*) = 0 THEN 'OK' ELSE 'WARNING' END as status,
         COUNT(*)::BIGINT as issue_count,
-        '存在沒有對應文章的文章塊'::TEXT as description
+        '存在沒有對應文章的文章分塊'::TEXT as description
     FROM article_chunks c
     LEFT JOIN articles a ON c.article_id = a.id
     WHERE a.id IS NULL;
     
-    -- 檢查沒有塊的文章
+    -- 檢查沒有分塊的文章
     RETURN QUERY
     SELECT 
         'articles_without_chunks'::TEXT as check_name,
@@ -551,13 +551,13 @@ BEGIN
         HAVING COUNT(*) > 1
     ) duplicates;
     
-    -- 檢查缺失嵌入向量的塊
+    -- 檢查缺失嵌入向量的分塊
     RETURN QUERY
     SELECT 
         'chunks_without_embeddings'::TEXT as check_name,
         CASE WHEN COUNT(*) = 0 THEN 'OK' ELSE 'INFO' END as status,
         COUNT(*)::BIGINT as issue_count,
-        '存在沒有嵌入向量的文章塊'::TEXT as description
+        '存在沒有嵌入向量的文章分塊'::TEXT as description
     FROM article_chunks
     WHERE embedding IS NULL;
 END;
@@ -582,7 +582,7 @@ FROM articles a
 LEFT JOIN article_chunks c ON a.id = c.article_id
 GROUP BY a.id, a.url, a.title, a.word_count, a.created_at, a.updated_at;
 
--- 域名統計視圖
+-- 域名摘要視圖
 CREATE OR REPLACE VIEW domain_summary AS
 SELECT 
     d.domain,
@@ -601,16 +601,16 @@ LEFT JOIN article_chunks c ON a.id = c.article_id
 GROUP BY d.domain;
 
 -- =============================================
--- 最終完成信息
+-- 最終完成資訊
 -- =============================================
 
 DO $$
 BEGIN
-    RAISE NOTICE '=== RAG系統完整數據庫架構部署完成 ===';
-    RAISE NOTICE '核心表格: discovered_urls, articles, article_chunks, sitemaps';
-    RAISE NOTICE '擴展功能: get_domain_stats(), get_crawl_progress(), search_similar_content()';
+    RAISE NOTICE '=== RAG系統完整資料庫架構部署完成 ===';
+    RAISE NOTICE '核心資料表: discovered_urls, articles, article_chunks, sitemaps';
+    RAISE NOTICE '擴充功能: get_domain_stats(), get_crawl_progress(), search_similar_content()';
     RAISE NOTICE '實用視圖: article_stats, domain_summary';
     RAISE NOTICE '使用 SELECT * FROM get_crawl_progress(); 查看爬取進度';
-    RAISE NOTICE '使用 SELECT * FROM check_data_integrity(); 檢查數據完整性';
+    RAISE NOTICE '使用 SELECT * FROM check_data_integrity(); 檢查資料完整性';
 END
 $$;
