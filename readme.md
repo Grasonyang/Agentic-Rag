@@ -6,13 +6,13 @@
 [![Docker](https://img.shields.io/badge/docker-%232496ED.svg?style=for-the-badge&logo=docker&logoColor=white)](https://www.docker.com/)
 [![Supabase](https://img.shields.io/badge/Supabase-3ECF8E?style=for-the-badge&logo=supabase&logoColor=white)](https://supabase.com/)
 
-**一個專為構建智能代理而設計的、可擴展的、生產級的檢索增強生成 (RAG) 框架。**
+**一個專為構建智能代理而設計的、可擴展的的檢索增強後端框架。**
 
-Agentic RAG 框架提供了一套完整的工具鏈，從網路數據的自動爬取、智能處理，到高效的向量化存儲和檢索，為開發先進的 AI 應用提供了堅實的後端基礎。
+Agentic RAG 框架提供了一套完整的工具鏈，從網路數據的自動爬取、智能處理，到高效的向量化存儲和檢索。
 
 ## 📋 項目概述
 
-本框架專為智能代理開發而設計，整合了網路爬蟲、文本處理、向量存儲和智能檢索功能，提供企業級的 RAG 解決方案。通過深度整合 Supabase 的強大功能，實現了數據處理到檢索的完整閉環。
+本框架專為智能代理開發而設計，整合了網路爬蟲、文本處理、向量存儲和智能檢索功能。通過深度整合 Supabase 的強大功能，實現了數據處理到檢索的完整閉環。
 
 ## 🎯 核心特性
 
