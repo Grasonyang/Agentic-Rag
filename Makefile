@@ -1,185 +1,103 @@
-# Makefile for Agentic RAG System Database Management
+# Agentic RAG System Makefile
+# 為新的模組化腳本流程設計
 
-.PHONY: db-check db-status db-fresh db-clear db-form db-tables db-fresh-force db-clear-force
-.PHONY: logs-show logs-clean output-show help install test spider-run db-test
-.PHONY: get-sitemap get-urls get-chunking get-embedding run-workflow
+.PHONY: help install test clean
+.PHONY: discover crawl embed search run-pipeline
+.PHONY: db-check db-fresh db-clear db-tables
 
-# Default goal
-.DEFAULT_GOAL := help
+# --- 變數定義 ---
+# 可在命令列中覆寫, 例如: make discover DOMAIN=https://www.gemini.com
+PYTHON := python3
+DOMAIN ?= https://www.lepoint.fr
+QUERY ?= "What is Retrieval-Augmented Generation?"
+LIMIT ?= 100
 
-# Variables for workflow
-URL ?= https://example.com
-SITEMAP_LIST ?= sitemaps.txt
-URL_LIST ?= urls.txt
-MAX_URLS ?= 1000
-CHUNK_SIZE ?= 200
+# --- 核心 RAG 流程 ---
+
+discover:
+	@echo "🗺️  步驟 1: 發現 $(DOMAIN) 的所有 URL..."
+	@$(PYTHON) -m scripts.1_discover_urls --domains $(DOMAIN)
+
+crawl:
+	@echo "📄  步驟 2: 爬取已發現的 URL 內容 (上限: $(LIMIT))..."
+	@$(PYTHON) -m scripts.2_crawl_content --limit $(LIMIT)
+
+embed:
+	@echo "🧠  步驟 3: 為新文章生成向量嵌入 (上限: $(LIMIT))..."
+	@$(PYTHON) -m scripts.3_process_and_embed --limit $(LIMIT)
+
+search:
+	@echo "🔍  步驟 4: 執行語義搜索..."
+	@echo "查詢: $(QUERY)"
+	@$(PYTHON) -m scripts.4_semantic_search --query $(QUERY)
+
+run-pipeline:
+	@echo "🚀  執行完整的數據導入流程 for $(DOMAIN)..."
+	@make discover DOMAIN=$(DOMAIN)
+	@make crawl
+	@make embed
+	@echo "✅  數據導入流程完成！"
+
+# --- 資料庫維護 ---
 
 db-check:
-	python3 scripts/database/make-db-check.py
-
-db-status:
-	@echo '🔍 快速資料庫狀態檢查...'
-	@python3 -c "import sys; sys.path.append('.'); from database.postgres_client import PostgreSQLClient; client = PostgreSQLClient(); client.connect(); print('✅ 資料庫連接正常'); client.disconnect()" 2>/dev/null || echo '❌ 資料庫連接失敗'
+	@echo "🩺  執行資料庫健康檢查..."
+	@$(PYTHON) -m scripts.database.make-db-check
 
 db-fresh:
-	@echo "🔄 重新初始化資料庫..."
-	@python3 scripts/database/make-fresh.py
+	@echo "🔄  重新初始化資料庫 (將刪除所有數據)..."
+	@$(PYTHON) -m scripts.database.make-fresh
 
 db-clear:
-	python3 scripts/database/make-clear.py
-
-# Additional database commands
-db-form:
-	@echo "📄 獲取資料庫表單數據..."
-	@python3 scripts/database/make-db-check.py | grep -A 1000 "資料庫表單 JSON 數據:" | tail -n +3
+	@echo "🔥  清空所有資料庫表中的數據..."
+	@$(PYTHON) -m scripts.database.make-clear
 
 db-tables:
-	@echo "📋 資料庫表格信息..."
-	@python3 -c "import sys; sys.path.append('.'); from database.postgres_client import PostgreSQLClient; client = PostgreSQLClient(); client.connect(); tables = ['discovered_urls', 'articles', 'article_chunks', 'sitemaps']; [print(f'📊 {table}: {client.get_table_count(table) if client.table_exists(table) else \"不存在\"} 筆記錄') for table in tables]; client.disconnect()"
+	@echo "📊  檢查資料庫各表記錄數..."
+	@$(PYTHON) -c "import sys; sys.path.append('.'); from database.operations import get_database_operations; db_ops = get_database_operations(); [print(f'{table}: {db_ops.get_table_count(table)} 條記錄') for table in ['sitemaps', 'discovered_urls', 'articles', 'article_chunks']] if db_ops"
 
-db-fresh-force:
-	@echo "🔥 強制重新初始化資料庫..."
-	@python3 scripts/database/make-fresh.py --force
+# --- 專案管理 ---
 
-db-clear-force:
-	@echo "🔥 強制清空資料庫數據..."
-	@python3 scripts/database/make-clear.py --force
-
-# Utility commands
-logs-show:
-	@echo "📋 最近的腳本日誌:"
-	@ls -la scripts/logs/ 2>/dev/null | tail -10 || echo "沒有日誌目錄"
-
-logs-clean:
-	@echo "🧹 清理舊日誌文件..."
-	@find scripts/logs -name "*.log" -mtime +7 -delete 2>/dev/null || true
-	@echo "✅ 日誌清理完成"
-
-output-show:
-	@echo "📁 最近生成的輸出文件:"
-	@ls -la scripts/output/ 2>/dev/null | tail -10 || echo "沒有輸出文件"
-
-help:
-	@echo "可用的資料庫指令:"
-	@echo "  db-check        - 執行完整的資料庫健康檢查"
-	@echo "  db-status       - 快速資料庫狀態檢查"
-	@echo "  db-fresh        - 重新初始化資料庫"
-	@echo "  db-fresh-force  - 強制重新初始化資料庫"
-	@echo "  db-clear        - 清空資料庫數據"
-	@echo "  db-clear-force  - 強制清空資料庫數據"
-	@echo "  db-form         - 獲取資料庫表單數據 (JSON)"
-	@echo "  db-tables       - 顯示資料庫表格信息"
-	@echo ""
-	@echo "RAG 工作流程指令:"
-	@echo "  get-sitemap     - 獲取網站 Sitemap 列表"
-	@echo "  get-urls        - 從 Sitemap 提取 URL"
-	@echo "  get-chunking    - 爬取內容並分塊"
-	@echo "  get-embedding   - 生成嵌入向量"
-	@echo "  run-workflow    - 執行完整 RAG 流程"
-	@echo ""
-	@echo "使用範例:"
-	@echo "  make run-workflow URL=https://docs.python.org"
-	@echo "  make get-sitemap URL=https://example.com"
-	@echo "  make get-urls SITEMAP_LIST=sitemaps.txt MAX_URLS=500"
-	@echo ""
-	@echo "日誌和維護指令:"
-	@echo "  logs-show       - 顯示最近的日誌"
-	@echo "  logs-clean      - 清理舊日誌文件"
-	@echo "  output-show     - 顯示最近的輸出文件"
-	@echo ""
-	@echo "項目設置指令:"
-	@echo "  install         - 安裝 Python 依賴"
-	@echo "  test            - 運行測試"
-	@echo "  spider-run      - 運行爬蟲測試"
-	@echo "  db-test         - 測試資料庫完整流程"
-
-# Project setup commands
 install:
-	@echo "📦 安裝 Python 依賴..."
-	@pip3 install -r requirements.txt
-	@echo "✅ 依賴安裝完成"
+	@echo "📦  安裝 Python 依賴..."
+	@pip install -r requirements.txt
+	@echo "✅  依賴安裝完成。"
+
+clean:
+	@echo "🧹  清理 pycache 檔案..."
+	@find . -type f -name '*.pyc' -delete
+	@find . -type d -name '__pycache__' -delete
+	@echo "✅  清理完成。"
 
 test:
-	@echo "🧪 運行測試..."
-	@python3 -m pytest scripts/database/test_db_check.py -v
-	@echo "✅ 測試完成"
+	@echo "🧪  運行專案測試..."
+	@$(PYTHON) -m pytest
 
-spider-run:
-	@echo "🕷️ 運行爬蟲測試..."
-	@python3 -c "import sys; sys.path.append('.'); from spider.rag_spider import RAGSpider; spider = RAGSpider(); print('🚀 爬蟲初始化成功')"
+help:
+	@echo "Agentic RAG 系統 - 可用命令:"
+	@echo "---------------------------------------------------"
+	@echo "  核心流程:"
+	@echo "    make discover     - 發現目標網站的所有 URL。可設置 DOMAIN。"
+	@echo "    make crawl        - 爬取已發現的 URL 內容。可設置 LIMIT。"
+	@echo "    make embed        - 為新文章生成向量嵌入。可設置 LIMIT。"
+	@echo "    make search       - 執行語義搜索。可設置 QUERY。"
+	@echo "    make run-pipeline - 完整執行 discover -> crawl -> embed 流程。"
+	@echo "
+  資料庫維護:"
+	@echo "    make db-check     - 檢查資料庫連接和結構。"
+	@echo "    make db-fresh     - 重建所有資料表 (警告: 刪除所有數據)。"
+	@echo "    make db-clear     - 清空所有資料表中的數據。"
+	@echo "    make db-tables    - 顯示核心表格的記錄數。"
+	@echo "
+  專案管理:"
+	@echo "    make install      - 安裝所有 Python 依賴。"
+	@echo "    make clean        - 清理專案中的 .pyc 和 __pycache__ 檔案。"
+	@echo "    make test         - 運行所有測試。"
+	@echo "    make help         - 顯示此幫助訊息。"
+	@echo "
+  使用範例:"
+	@echo "    make run-pipeline DOMAIN=https://www.your-site.com"
+	@echo "    make search QUERY=\"我關心的問題是什麼？\""
+	@echo "---------------------------------------------------"
 
-# Database testing command
-db-test:
-	@echo "🧪 測試資料庫完整流程..."
-	@echo "1️⃣ 檢查資料庫狀態..."
-	@make db-status
-	@echo "2️⃣ 執行健康檢查..."
-	@make db-check > /dev/null
-	@echo "3️⃣ 顯示表格信息..."
-	@make db-tables
-	@echo "✅ 資料庫測試完成！"
-
-# RAG Workflow Commands
-get-sitemap:
-	@echo "🗺️ 獲取 Sitemap 列表..."
-	@echo "目標網站: $(URL)"
-	@python3 -c "import sys; sys.path.append('.'); from spider.rag_spider import discover_sitemaps; discover_sitemaps('$(URL)', '$(SITEMAP_LIST)')"
-
-# 使用環境變數中的 TARGET_URLS 進行完整工作流程
-run-env-workflow:
-	@echo "🚀 使用環境變數執行 RAG 工作流程..."
-	@echo "====================================="
-	@python3 -c "import os; print(f'目標 URLs: {os.getenv(\"TARGET_URLS\", \"未設定\")}')"
-	@echo "====================================="
-	@echo ""
-	@echo "步驟 1: 從環境變數讀取並發現 Sitemap"
-	@python3 -c "import sys, os; sys.path.append('.'); from spider.rag_spider import discover_sitemaps; target_urls = os.getenv('TARGET_URLS', ''); [discover_sitemaps(url.strip(), 'sitemaps.txt') for url in target_urls.split(',') if url.strip()]"
-	@echo ""
-	@echo "步驟 2: 提取 URL"
-	@make get-urls SITEMAP_LIST=$(SITEMAP_LIST) MAX_URLS=$(MAX_URLS)
-	@echo ""
-	@echo "步驟 3: 爬取和分塊"
-	@make get-chunking URL_LIST=$(URL_LIST) CHUNK_SIZE=$(CHUNK_SIZE)
-	@echo ""
-	@echo "步驟 4: 生成嵌入"
-	@make get-embedding
-	@echo ""
-	@echo "✅ RAG 工作流程完成！"
-	@make db-tables
-
-get-urls:
-	@echo "🔗 從 Sitemap 提取 URL 列表..."
-	@echo "Sitemap 清單: $(SITEMAP_LIST)"
-	@echo "最大 URL 數: $(MAX_URLS)"
-	@python3 -c "import sys; sys.path.append('.'); from spider.rag_spider import extract_urls_from_sitemaps; extract_urls_from_sitemaps('$(SITEMAP_LIST)', '$(URL_LIST)', $(MAX_URLS))"
-
-get-chunking:
-	@echo "📄 爬取網頁內容並進行分塊..."
-	@echo "URL 清單: $(URL_LIST)"
-	@echo "塊大小: $(CHUNK_SIZE)"
-	@python3 -c "import sys; sys.path.append('.'); from spider.rag_spider import crawl_and_chunk_urls; crawl_and_chunk_urls('$(URL_LIST)', $(CHUNK_SIZE))"
-
-get-embedding:
-	@echo "🧠 生成內容嵌入向量..."
-	@python3 -c "import sys; sys.path.append('.'); print('⚠️ 嵌入功能開發中...')"
-
-run-workflow:
-	@echo "🚀 執行完整 RAG 工作流程..."
-	@echo "====================================="
-	@echo "目標網站: $(URL)"
-	@echo "====================================="
-	@echo ""
-	@echo "步驟 1: 發現 Sitemap"
-	@make get-sitemap URL=$(URL)
-	@echo ""
-	@echo "步驟 2: 提取 URL"
-	@make get-urls SITEMAP_LIST=$(SITEMAP_LIST) MAX_URLS=$(MAX_URLS)
-	@echo ""
-	@echo "步驟 3: 爬取和分塊"
-	@make get-chunking URL_LIST=$(URL_LIST) CHUNK_SIZE=$(CHUNK_SIZE)
-	@echo ""
-	@echo "步驟 4: 生成嵌入"
-	@make get-embedding
-	@echo ""
-	@echo "✅ RAG 工作流程完成！"
-	@make db-tables
+.DEFAULT_GOAL := help
