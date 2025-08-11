@@ -3,27 +3,31 @@
 
 功能:
 1. 從資料庫 `discovered_urls` 表中獲取狀態為 'pending' 的 URL。
-2. 使用 WebCrawler 逐一爬取這些 URL 的內容。
-3. 將成功爬取的內容（標題、正文）存入 `articles` 表。
+2. 使用 AsyncWebCrawler 逐一爬取這些 URL 的內容。
+3. 將成功爬取的內容（Markdown 格式）存入 `articles` 表。
 4. 更新 `discovered_urls` 表中對應 URL 的狀態為 'completed' 或 'error'。
 5. 此腳本可重複執行，直到所有待處理的 URL 都被處理完畢。
 
 執行方式:
-python -m scripts.2_crawl_content --limit 100
+python -m scripts.2_crawl_content --max_urls 100
 """
 
 import argparse
 import logging
-import time
+import asyncio
+import os
 
 # 配置專案根目錄
 import sys
-import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from database.operations import get_database_operations, DatabaseOperations
+from config_manager import load_config
+from database.operations import get_database_operations
 from database.models import ArticleModel, CrawlStatus
-from spider.crawlers.web_crawler import WebCrawler, CrawlResult
+from crawl4ai import AsyncWebCrawler, RateLimiter
+
+# 載入 .env 配置
+load_config()
 
 # 配置日誌
 logging.basicConfig(
@@ -33,14 +37,28 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-def main(limit: int):
+def get_rate_limiter() -> RateLimiter:
+    """從環境變數讀取並回傳爬蟲設定"""
+    return RateLimiter(
+        base_delay=(
+            float(os.getenv("RATE_LIMIT_BASE_DELAY_MIN", 1.0)),
+            float(os.getenv("RATE_LIMIT_BASE_DELAY_MAX", 2.0)),
+        ),
+        max_delay=float(os.getenv("RATE_LIMIT_MAX_DELAY", 30.0)),
+        max_retries=int(os.getenv("RATE_LIMIT_MAX_RETRIES", 2)),
+    )
+
+async def main(max_urls: int):
     """
     主執行函數
 
     Args:
-        limit (int): 每次執行時處理的 URL 數量上限。
+        max_urls (int): 每次執行時處理的 URL 數量上限。
     """
-    logger.info(f"內容爬取腳本開始執行，本次最多處理 {limit} 個 URL。")
+    if max_urls:
+        logger.info(f"內容爬取腳本開始執行，本次最多處理 {max_urls} 個 URL。")
+    else:
+        logger.info(f"內容爬取腳本開始執行，本次將處理所有待處理的 URL。")
 
     db_ops = get_database_operations()
     if not db_ops:
@@ -48,7 +66,7 @@ def main(limit: int):
         return
 
     # 1. 獲取待爬取的 URL
-    pending_urls = db_ops.get_pending_urls(limit=limit)
+    pending_urls = db_ops.get_pending_urls(limit=max_urls)
     if not pending_urls:
         logger.info("沒有待處理的 URL，腳本執行完畢。")
         return
@@ -56,61 +74,63 @@ def main(limit: int):
     logger.info(f"從資料庫獲取了 {len(pending_urls)} 個待處理的 URL。")
 
     # 2. 逐一爬取並處理
-    crawler = WebCrawler()
     processed_count = 0
     success_count = 0
+    
+    rate_limiter = get_rate_limiter()
 
-    for url_model in pending_urls:
-        logger.info(f"正在處理 URL (ID: {url_model.id}): {url_model.url}")
+    async with AsyncWebCrawler(rate_limiter=rate_limiter) as crawler:
+        for url_model in pending_urls:
+            logger.info(f"正在處理 URL (ID: {url_model.id}): {url_model.url}")
 
-        # a. 更新狀態為爬取中
-        db_ops.update_crawl_status(url_model.id, CrawlStatus.CRAWLING)
+            # a. 更新狀態為爬取中
+            db_ops.update_crawl_status(url_model.id, CrawlStatus.CRAWLING)
 
-        # b. 執行爬取
-        result = crawler.crawl(url_model.url)
+            # b. 執行爬取
+            try:
+                result = await crawler.arun(url_model.url)
+                
+                if not result.success:
+                    raise Exception(f"Crawl failed with error: {result.error_message}")
 
-        # c. 處理爬取結果
-        if result.error:
-            # 爬取失敗
-            logger.error(f"爬取失敗: {result.url}, 原因: {result.error}")
-            db_ops.update_crawl_status(url_model.id, CrawlStatus.ERROR, error_message=result.error)
-        else:
-            # 爬取成功
-            logger.info(f"爬取成功: {result.url}, 標題: {result.title[:50]}...")
-            article = ArticleModel(
-                url=result.url,
-                title=result.title,
-                content=result.content,
-                crawled_from_url_id=url_model.id,
-                metadata={'source': 'web_crawler'}
-            )
+                # c. 處理爬取結果
+                logger.info(f"爬取成功: {url_model.url}")
+                article = ArticleModel(
+                    url=url_model.url,
+                    title=url_model.url,  # 使用 URL 作為標題
+                    content=result.markdown,
+                    crawled_from_url_id=url_model.id,
+                    metadata={'source': 'crawl4ai'}
+                )
+                
+                # 存入文章到資料庫
+                if db_ops.create_article(article):
+                    success_count += 1
+                    # 更新狀態為完成
+                    db_ops.update_crawl_status(url_model.id, CrawlStatus.COMPLETED)
+                else:
+                    # 文章已存在或創建失敗
+                    error_msg = "Article already exists or failed to create."
+                    logger.warning(f"{url_model.url} - {error_msg}")
+                    db_ops.update_crawl_status(url_model.id, CrawlStatus.ERROR, error_message=error_msg)
+
+            except Exception as e:
+                # 爬取失敗
+                logger.error(f"爬取失敗: {url_model.url}, 原因: {e}")
+                db_ops.update_crawl_status(url_model.id, CrawlStatus.ERROR, error_message=str(e))
             
-            # 存入文章到資料庫
-            if db_ops.create_article(article):
-                success_count += 1
-                # 更新狀態為完成
-                db_ops.update_crawl_status(url_model.id, CrawlStatus.COMPLETED)
-            else:
-                # 文章已存在或創建失敗
-                error_msg = "Article already exists or failed to create."
-                logger.warning(f"{result.url} - {error_msg}")
-                db_ops.update_crawl_status(url_model.id, CrawlStatus.ERROR, error_message=error_msg)
-        
-        processed_count += 1
-        # 每次處理後短暫休眠，避免請求過於頻繁
-        time.sleep(1)
+            processed_count += 1
 
-    crawler.close_session()
     logger.info(f"本次執行完成。共處理 {processed_count} 個 URL，其中 {success_count} 個成功存為文章。")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="內容爬取腳本：從資料庫讀取待處理 URL，爬取其內容並存儲。")
     parser.add_argument(
-        '--limit',
+        '--max_urls',
         type=int,
-        default=100,
-        help='每次執行時處理的 URL 數量上限。'
+        default=None,
+        help='每次執行時處理的 URL 數量上限。如果未設定，則處理所有待處理的 URL。'
     )
     args = parser.parse_args()
     
-    main(args.limit)
+    asyncio.run(main(args.max_urls))

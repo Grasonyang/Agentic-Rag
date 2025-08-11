@@ -26,7 +26,9 @@ def load_config():
     """
     # `find_dotenv` 會從當前檔案位置向上搜索 .env 檔案
     # `override=True` 表示如果環境中已存在同名變數，.env 中的值會覆蓋它
-    env_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), '.env')
+    # 專案根目錄就是這個檔案所在的目錄
+    project_root = os.path.dirname(os.path.abspath(__file__))
+    env_path = os.path.join(project_root, '.env')
     
     if not os.path.exists(env_path):
         logger.warning(f".env 檔案未找到於: {env_path}")

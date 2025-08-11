@@ -81,14 +81,17 @@ class DatabaseOperations:
             logger.error(f"批量創建 URL 記錄時發生錯誤: {e}")
             return 0
     
-    def get_pending_urls(self, limit: int = 100) -> List[DiscoveredURLModel]:
+    def get_pending_urls(self, limit: Optional[int] = 100) -> List[DiscoveredURLModel]:
         """獲取待爬取的 URL"""
         try:
-            response = (self.client.table("discovered_urls")
+            query = (self.client.table("discovered_urls")
                        .select("*")
-                       .eq("crawl_status", CrawlStatus.PENDING.value)
-                       .limit(limit)
-                       .execute())
+                       .eq("crawl_status", CrawlStatus.PENDING.value))
+            
+            if limit is not None:
+                query = query.limit(limit)
+
+            response = query.execute()
             
             if response.data:
                 return [DiscoveredURLModel.from_dict(data) for data in response.data]

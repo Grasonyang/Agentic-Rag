@@ -1,7 +1,11 @@
 # Web Crawling
 crawl4ai
 requests
+beautifulsoup4
 
 # db
 supabase
 psycopg2
+
+# testing
+pytest-asyncio

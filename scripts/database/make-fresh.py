@@ -18,6 +18,7 @@ make-fresh.py - 重新初始化資料庫腳本
 import sys
 import asyncio
 import argparse
+import logging
 from pathlib import Path
 from datetime import datetime
 from typing import Dict, List, Any, Optional
@@ -25,17 +26,28 @@ from typing import Dict, List, Any, Optional
 # 添加專案根目錄到 Python 路徑
 sys.path.append(str(Path(__file__).parent.parent.parent))
 
-from scripts.utils import ScriptRunner
 from database.postgres_client import PostgreSQLClient
 
+class FileManager:
+    def __init__(self, output_dir="."):
+        self.output_dir = Path(output_dir)
+        self.output_dir.mkdir(parents=True, exist_ok=True)
 
-class DatabaseInitializer(ScriptRunner):
+    def save_text_file(self, content, filename):
+        path = self.output_dir / filename
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(content)
+        return str(path)
+
+class DatabaseInitializer:
     """資料庫初始化器"""
     
     def __init__(self, force: bool = False):
-        super().__init__("db_initializer")
+        self.logger = logging.getLogger(self.__class__.__name__)
+        logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - [%(name)s] - %(message)s')
         self.force = force
         self.pg_client = None
+        self.file_manager = FileManager(output_dir=".")
         
         self.schema_file = Path(__file__).parent.parent.parent / "database" / "sql" / "schema.sql"
         
@@ -487,7 +499,6 @@ class DatabaseInitializer(ScriptRunner):
         try:
             # 1. 連接資料庫
             if not self.connect_database():
-                self.post_run_cleanup(False)
                 return
             
             # 2. 獲取當前狀態
@@ -497,7 +508,6 @@ class DatabaseInitializer(ScriptRunner):
             if not self.confirm_initialization(before_status):
                 self.logger.info("🚫 初始化操作已取消")
                 self.disconnect_database()
-                self.post_run_cleanup(True)
                 return
             
             # 4. 清空現有數據
@@ -525,21 +535,16 @@ class DatabaseInitializer(ScriptRunner):
             # 9. 判斷初始化是否成功
             if verification["status"] == "success":
                 self.logger.info("🎉 資料庫初始化完成！")
-                self.post_run_cleanup(True)
             elif verification["status"] == "partial":
                 self.logger.warning("⚠️ 資料庫初始化完成，但有一些功能可能不完整")
-                self.post_run_cleanup(True)
             else:
                 self.logger.error("❌ 資料庫初始化失敗")
-                self.post_run_cleanup(False)
                 
         except Exception as e:
             self.logger.error(f"❌ 初始化過程中發生錯誤: {e}")
-            self.post_run_cleanup(False)
         finally:
             # 確保斷開連接
             self.disconnect_database()
-
 
 async def main():
     """主函數"""

@@ -18,6 +18,7 @@ make-clear.py - 清空資料庫腳本
 import sys
 import asyncio
 import argparse
+import logging
 from pathlib import Path
 from datetime import datetime
 from typing import Dict, List, Any
@@ -25,17 +26,28 @@ from typing import Dict, List, Any
 # 添加專案根目錄到 Python 路徑
 sys.path.append(str(Path(__file__).parent.parent.parent))
 
-from scripts.utils import ScriptRunner
 from database.postgres_client import PostgreSQLClient
 
+class FileManager:
+    def __init__(self, output_dir="."):
+        self.output_dir = Path(output_dir)
+        self.output_dir.mkdir(parents=True, exist_ok=True)
 
-class DatabaseCleaner(ScriptRunner):
+    def save_text_file(self, content, filename):
+        path = self.output_dir / filename
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(content)
+        return str(path)
+
+class DatabaseCleaner:
     """資料庫清理器"""
     
     def __init__(self, force: bool = False):
-        super().__init__("db_cleaner")
+        self.logger = logging.getLogger(self.__class__.__name__)
+        logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - [%(name)s] - %(message)s')
         self.force = force
         self.pg_client = None
+        self.file_manager = FileManager(output_dir=".")
         
         # 按照外鍵依賴順序定義清理順序
         self.tables_order = [
@@ -249,7 +261,7 @@ class DatabaseCleaner(ScriptRunner):
                 self.logger.info("🎉 資料庫清空驗證成功！")
             elif verification["total_remaining"] > 0:
                 verification["status"] = "partial"
-                self.logger.warning(f"⚠️ 資料庫部分清空，剩餘 {verification['total_remaining']} 筆記錄")
+                self.logger.warning("⚠️ 資料庫部分清空，剩餘 {verification['total_remaining']} 筆記錄")
             else:
                 verification["status"] = "error"
                 self.logger.error("❌ 資料庫清空驗證失敗")
@@ -342,7 +354,6 @@ class DatabaseCleaner(ScriptRunner):
         try:
             # 1. 連接資料庫
             if not self.connect_database():
-                self.post_run_cleanup(False)
                 return
             
             # 2. 獲取清理前統計
@@ -352,7 +363,6 @@ class DatabaseCleaner(ScriptRunner):
             if not self.confirm_deletion(before_stats):
                 self.logger.info("🚫 清理操作已取消")
                 self.disconnect_database()
-                self.post_run_cleanup(True)
                 return
             
             # 4. 執行清理
@@ -376,17 +386,13 @@ class DatabaseCleaner(ScriptRunner):
             # 8. 判斷清理是否成功
             if verification["status"] == "success":
                 self.logger.info("🎉 資料庫清理完成！")
-                self.post_run_cleanup(True)
             elif verification["status"] == "partial":
                 self.logger.warning("⚠️ 資料庫部分清理完成")
-                self.post_run_cleanup(True)
             else:
                 self.logger.error("❌ 資料庫清理失敗")
-                self.post_run_cleanup(False)
                 
         except Exception as e:
             self.logger.error(f"❌ 清理過程中發生錯誤: {e}")
-            self.post_run_cleanup(False)
         finally:
             # 確保斷開連接
             self.disconnect_database()

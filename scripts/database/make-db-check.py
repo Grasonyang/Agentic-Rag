@@ -16,6 +16,7 @@ make-db-check.py - 資料庫狀態檢查腳本
 
 import sys
 import asyncio
+import logging
 from pathlib import Path
 from datetime import datetime
 from typing import Dict, List, Any, Optional
@@ -23,16 +24,27 @@ from typing import Dict, List, Any, Optional
 # 添加專案根目錄到 Python 路徑
 sys.path.append(str(Path(__file__).parent.parent.parent))
 
-from scripts.utils import ScriptRunner
 from database.postgres_client import PostgreSQLClient
 
+class FileManager:
+    def __init__(self, output_dir="."):
+        self.output_dir = Path(output_dir)
+        self.output_dir.mkdir(parents=True, exist_ok=True)
 
-class DatabaseHealthChecker(ScriptRunner):
+    def save_text_file(self, content, filename):
+        path = self.output_dir / filename
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(content)
+        return str(path)
+
+class DatabaseHealthChecker:
     """資料庫健康檢查器"""
     
     def __init__(self):
-        super().__init__("db_health_check")
+        self.logger = logging.getLogger(self.__class__.__name__)
+        logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - [%(name)s] - %(message)s')
         self.pg_client = None
+        self.file_manager = FileManager(output_dir=".")
         
         # 預期的表格
         self.expected_tables = [
@@ -546,7 +558,6 @@ class DatabaseHealthChecker(ScriptRunner):
         try:
             # 1. 連接資料庫
             if not self.connect_database():
-                self.post_run_cleanup(False)
                 return None
             
             # 2. 檢查連接
@@ -591,7 +602,6 @@ class DatabaseHealthChecker(ScriptRunner):
             
             if has_critical_errors:
                 self.logger.error("❌ 資料庫健康狀態異常，需要修復")
-                self.post_run_cleanup(False)
                 return None
             else:
                 # 即使有一些非關鍵警告（如函數或擴展缺失），仍然可以回傳表單
@@ -610,12 +620,10 @@ class DatabaseHealthChecker(ScriptRunner):
                 # 保存資料庫表單數據
                 form_path = self.save_database_form(db_form)
                 
-                self.post_run_cleanup(True)
                 return db_form
                 
         except Exception as e:
             self.logger.error(f"❌ 健康檢查過程中發生錯誤: {e}")
-            self.post_run_cleanup(False)
             return None
         finally:
             # 確保斷開連接

@@ -10,12 +10,11 @@ import json
 from typing import Optional
 from supabase import create_client, Client
 
-import os
-import logging
-import base64
-import json
-from typing import Optional
-from supabase import create_client, Client
+from config_manager import load_config
+
+# 載入環境變數
+load_config()
+
 
 # 設置日誌
 logger = logging.getLogger(__name__)
