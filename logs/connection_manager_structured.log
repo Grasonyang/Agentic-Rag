@@ -1,0 +1,3 @@
+{"timestamp": "2025-08-12T03:21:12.623047", "level": "INFO", "logger": "connection_manager", "message": "HTTP 會話已創建", "module": "enhanced_logger", "function": "info", "line": 300}
+{"timestamp": "2025-08-12T03:21:16.693066", "level": "INFO", "logger": "connection_manager", "message": "連接管理器已關閉", "module": "enhanced_logger", "function": "info", "line": 300}
+{"timestamp": "2025-08-12T03:22:07.540649", "level": "INFO", "logger": "connection_manager", "message": "HTTP 會話已創建", "module": "enhanced_logger", "function": "info", "line": 300}
