@@ -96,7 +96,7 @@
 
 
 ### 架構
-
+```mermaid
 flowchart TB
   subgraph WorkerCluster["Worker Nodes per domain"]
     direction LR
