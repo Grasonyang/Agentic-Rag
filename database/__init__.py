@@ -1,9 +1,9 @@
 """
 資料庫管理模組
-管理所有與 Supabase 相關的功能
+提供與 PostgreSQL 相關的功能
 """
 
-from .client import SupabaseClient
+from .client import PostgresClient
 from .models import (
     ArticleModel, ChunkModel, SitemapModel, DiscoveredURLModel,
     CrawlStatus, ChangeFreq, URLType, SitemapType, BaseModel, ModelFactory
@@ -11,7 +11,7 @@ from .models import (
 from .operations import DatabaseOperations
 
 __all__ = [
-    'SupabaseClient',
+    'PostgresClient',
     'ArticleModel', 
     'ChunkModel',
     'SitemapModel',
