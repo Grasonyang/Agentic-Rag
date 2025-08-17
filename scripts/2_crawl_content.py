@@ -76,11 +76,42 @@ async def main(max_urls: int):
     # 2. 逐一爬取並處理
     processed_count = 0
     success_count = 0
+    crawler_restart_count = 0
+    max_crawler_restarts = 3
     
     rate_limiter = get_rate_limiter()
 
-    async with AsyncWebCrawler(rate_limiter=rate_limiter) as crawler:
+    # 使用更健壮的爬虫管理
+    crawler = None
+    try:
         for url_model in pending_urls:
+            # 如果爬虫未初始化或需要重启
+            if crawler is None:
+                try:
+                    logger.info("正在初始化/重启爬虫...")
+                    crawler = AsyncWebCrawler(
+                        rate_limiter=rate_limiter,
+                        # 添加更稳健的配置
+                        browser_config={
+                            "headless": True,
+                            "args": [
+                                "--no-sandbox",
+                                "--disable-dev-shm-usage",
+                                "--disable-extensions",
+                                "--disable-gpu",
+                                "--disable-web-security",
+                                "--ignore-certificate-errors",
+                                "--memory-pressure-off",
+                                "--max_old_space_size=4096"
+                            ]
+                        }
+                    )
+                    await crawler.__aenter__()
+                    logger.info("爬虫初始化成功")
+                except Exception as e:
+                    logger.error(f"爬虫初始化失败: {e}")
+                    break
+
             logger.info(f"正在處理 URL (ID: {url_model.id}): {url_model.url}")
 
             # a. 更新狀態為爬取中
@@ -115,11 +146,50 @@ async def main(max_urls: int):
                     db_ops.update_crawl_status(url_model.id, CrawlStatus.ERROR, error_message=error_msg)
 
             except Exception as e:
-                # 爬取失敗
-                logger.error(f"爬取失敗: {url_model.url}, 原因: {e}")
-                db_ops.update_crawl_status(url_model.id, CrawlStatus.ERROR, error_message=str(e))
+                error_message = str(e)
+                logger.error(f"爬取失敗: {url_model.url}, 原因: {error_message}")
+                
+                # 检查是否是连接错误，需要重启爬虫
+                if ("Connection closed" in error_message or 
+                    "Target page, context or browser has been closed" in error_message or
+                    "Browser" in error_message and "close" in error_message):
+                    
+                    logger.warning("检测到浏览器连接问题，准备重启爬虫...")
+                    
+                    # 清理当前爬虫
+                    try:
+                        if crawler:
+                            await crawler.__aexit__(None, None, None)
+                    except:
+                        pass  # 忽略清理时的错误
+                    
+                    crawler = None
+                    crawler_restart_count += 1
+                    
+                    if crawler_restart_count <= max_crawler_restarts:
+                        logger.info(f"将在下次循环中重启爬虫 ({crawler_restart_count}/{max_crawler_restarts})")
+                        # 为这个URL设置错误状态，下次运行时会重试
+                        db_ops.update_crawl_status(url_model.id, CrawlStatus.PENDING, error_message=f"Browser restart needed: {error_message}")
+                    else:
+                        logger.error(f"爬虫重启次数已达上限，跳过此URL")
+                        db_ops.update_crawl_status(url_model.id, CrawlStatus.ERROR, error_message=error_message)
+                else:
+                    # 其他类型的错误
+                    db_ops.update_crawl_status(url_model.id, CrawlStatus.ERROR, error_message=error_message)
             
             processed_count += 1
+            
+            # 添加小延迟，减少资源压力
+            await asyncio.sleep(1)
+
+    finally:
+        # 确保爬虫被正确关闭
+        if crawler:
+            try:
+                await crawler.__aexit__(None, None, None)
+                logger.info("爬虫已正常关闭")
+            except Exception as e:
+                logger.warning(f"爬虫关闭时出现警告: {e}")
 
     logger.info(f"本次執行完成。共處理 {processed_count} 個 URL，其中 {success_count} 個成功存為文章。")
 

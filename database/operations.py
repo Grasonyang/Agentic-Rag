@@ -82,22 +82,25 @@ class DatabaseOperations:
             return 0
     
     def get_pending_urls(self, limit: Optional[int] = 100) -> List[DiscoveredURLModel]:
-        """獲取待爬取的 URL"""
+        """獲取待爬取的 URL (狀態為 pending 或 null)"""
         try:
+            # 同時查詢 'pending' 狀態或 crawl_status 為 NULL 的記錄
+            # 這能確保新發現的 URL (預設為 NULL) 也會被處理
+            filter_query = f"""crawl_status.eq.{CrawlStatus.PENDING.value},crawl_status.is.null"""
             query = (self.client.table("discovered_urls")
                        .select("*")
-                       .eq("crawl_status", CrawlStatus.PENDING.value))
-            
+                       .or_(filter_query))
+
             if limit is not None:
                 query = query.limit(limit)
 
             response = query.execute()
-            
+
             if response.data:
                 return [DiscoveredURLModel.from_dict(data) for data in response.data]
             else:
                 return []
-                
+
         except Exception as e:
             logger.error(f"獲取待爬取 URL 時發生錯誤: {e}")
             return []

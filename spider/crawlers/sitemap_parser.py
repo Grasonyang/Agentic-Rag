@@ -100,17 +100,18 @@ class SitemapParser:
             print(f"Error checking content for {url}: {e}")
             return False
 
-    async def discover_urls_from_sitemaps(self, domain: str) -> tuple[list[str], list[str]]:
+    async def discover_urls_from_sitemaps(self, domain: str):
         """
         Discovers all URLs from the sitemaps of a domain.
-        Returns a tuple containing a list of all URLs and a list of parsed sitemap URLs.
+        Yields discovered items:
+        - ('sitemap', sitemap_url) for each sitemap that is successfully parsed.
+        - ('urls', list_of_urls) for all URLs found within that sitemap.
         """
         sitemaps_to_parse = self.get_sitemaps_from_robots(domain)
         if not sitemaps_to_parse:
             # If no sitemaps in robots.txt, try the default sitemap.xml
             sitemaps_to_parse.append(urljoin(domain, "sitemap.xml"))
 
-        all_urls = []
         parsed_sitemaps = set()
 
         while sitemaps_to_parse:
@@ -119,8 +120,14 @@ class SitemapParser:
                 continue
 
             urls, nested_sitemaps = await self.parse_sitemap(sitemap_url)
-            all_urls.extend(urls)
-            sitemaps_to_parse.extend(nested_sitemaps)
             parsed_sitemaps.add(sitemap_url)
 
-        return all_urls, list(parsed_sitemaps)
+            # Yield the parsed sitemap URL first
+            yield 'sitemap', sitemap_url
+            
+            # Then yield the urls found inside
+            if urls:
+                yield 'urls', urls
+            
+            # Add nested sitemaps to the queue for parsing
+            sitemaps_to_parse.extend(nested_sitemaps)

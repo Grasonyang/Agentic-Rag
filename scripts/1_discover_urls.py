@@ -37,6 +37,27 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# 全局计数器，用于跟踪处理进度
+BATCH_SAVE_SIZE = 10  # 每处理10个URL报告一次进度
+
+def check_url_exists_in_db(db_ops, url: str) -> bool:
+    """检查 URL 是否已经存在于数据库中"""
+    try:
+        # 检查是否在 discovered_urls 表中
+        response = db_ops.client.table("discovered_urls").select("id").eq("url", url).limit(1).execute()
+        if response.data:
+            return True
+        
+        # 检查是否在 sitemaps 表中  
+        response = db_ops.client.table("sitemaps").select("id").eq("url", url).limit(1).execute()
+        if response.data:
+            return True
+            
+        return False
+    except Exception as e:
+        logger.warning(f"检查 URL {url} 是否存在时出错: {e}")
+        return False
+
 async def main(domains: list[str]):
     """
     主執行函數
@@ -61,33 +82,109 @@ async def main(domains: list[str]):
             logger.info(f"從 {domain_url} 的 sitemaps 中初步發現 {len(initial_urls)} 個 URL。")
             logger.info(f"初步解析了 {len(initial_sitemaps)} 個 sitemap。")
 
-            final_sitemap_urls = set(initial_sitemaps)
-            final_discovered_urls = []
+            # 先保存所有已确认的 sitemap URLs (跳过已存在的)
+            if initial_sitemaps:
+                sitemap_count = 0
+                skipped_count = 0
+                for sitemap_url in initial_sitemaps:
+                    if check_url_exists_in_db(db_ops, sitemap_url):
+                        skipped_count += 1
+                        logger.debug(f"跳过已存在的 sitemap: {sitemap_url}")
+                        continue
+                        
+                    sitemap_model = SitemapModel(url=sitemap_url, domain=domain_url)
+                    if db_ops.create_sitemap(sitemap_model):
+                        sitemap_count += 1
+                        
+                logger.info(f"已將 {sitemap_count} 個新的 sitemap 存入資料庫 (跳過 {skipped_count} 個已存在)。")
 
-            # 驗證初步發現的 URL 是否真的是文章 URL 還是隱藏的 sitemap
-            for url in initial_urls:
-                if await sitemap_parser._is_sitemap_by_content(url):
-                    final_sitemap_urls.add(url)
-                else:
-                    final_discovered_urls.append(url)
+            # 逐個驗證 URL 並即時保存 (跳過已存在的)
+            final_sitemap_count = 0
+            final_url_count = 0
+            processed_count = 0
+            skipped_count = 0
+            error_count = 0
+            start_time = asyncio.get_event_loop().time()
             
-            logger.info(f"最終確認 {len(final_sitemap_urls)} 個 sitemap URL 和 {len(final_discovered_urls)} 個待爬取 URL。")
-
-            if final_sitemap_urls:
-                sitemap_models = [
-                    SitemapModel(url=sitemap_url, domain=domain_url) for sitemap_url in final_sitemap_urls
-                ]
-                for sitemap_model in sitemap_models:
-                    db_ops.create_sitemap(sitemap_model)
-                logger.info(f"已將 {len(final_sitemap_urls)} 個 sitemap 存入資料庫。")
-
-            if final_discovered_urls:
-                discovered_url_models = [
-                    DiscoveredURLModel(url=url) for url in final_discovered_urls
-                ]
+            if not initial_urls:
+                logger.info("沒有待驗證的 URL，跳過驗證步驟。")
+            else:
+                logger.info(f"開始逐個驗證 {len(initial_urls)} 個 URL...")
                 
-                created_count = db_ops.bulk_create_discovered_urls(discovered_url_models)
-                logger.info(f"批量存入 {created_count} 個 URL 到資料庫。")
+                for i, url in enumerate(initial_urls, 1):
+                    processed_count += 1
+                    
+                    # 检查是否已经存在
+                    if check_url_exists_in_db(db_ops, url):
+                        skipped_count += 1
+                        logger.debug(f"跳過已存在的 URL: {url}")
+                        continue
+                    
+                    # 每處理指定數量的 URL 或處理完最後一個時報告進度
+                    if processed_count % BATCH_SAVE_SIZE == 0 or processed_count == len(initial_urls):
+                        elapsed_time = asyncio.get_event_loop().time() - start_time
+                        avg_time_per_url = elapsed_time / (processed_count - skipped_count) if (processed_count - skipped_count) > 0 else 0
+                        remaining_urls = len(initial_urls) - processed_count
+                        estimated_remaining_time = remaining_urls * avg_time_per_url
+                        
+                        logger.info(f"進度: {processed_count}/{len(initial_urls)} ({processed_count/len(initial_urls)*100:.1f}%)")
+                        logger.info(f"  - 已發現 sitemap: {final_sitemap_count} 個")
+                        logger.info(f"  - 已保存 URL: {final_url_count} 個") 
+                        logger.info(f"  - 跳過已存在: {skipped_count} 個")
+                        logger.info(f"  - 處理錯誤: {error_count} 個")
+                        logger.info(f"  - 平均處理時間: {avg_time_per_url:.2f}s/URL")
+                        if remaining_urls > 0:
+                            logger.info(f"  - 預估剩餘時間: {estimated_remaining_time/60:.1f} 分鐘")
+                    
+                    try:
+                        if await sitemap_parser._is_sitemap_by_content(url):
+                            # 這是一個隱藏的 sitemap，立即保存
+                            sitemap_model = SitemapModel(url=url, domain=domain_url)
+                            if db_ops.create_sitemap(sitemap_model):
+                                final_sitemap_count += 1
+                                logger.debug(f"發現並保存隱藏 sitemap: {url}")
+                            else:
+                                logger.warning(f"保存隱藏 sitemap 失敗: {url}")
+                                error_count += 1
+                        else:
+                            # 這是一個待爬取的 URL，立即保存
+                            discovered_url_model = DiscoveredURLModel(url=url)
+                            if db_ops.create_discovered_url(discovered_url_model):
+                                final_url_count += 1
+                                logger.debug(f"保存待爬取 URL: {url}")
+                            else:
+                                logger.warning(f"保存待爬取 URL 失敗: {url}")
+                                error_count += 1
+                            
+                    except KeyboardInterrupt:
+                        logger.warning(f"收到中斷信號，已處理 {processed_count}/{len(initial_urls)} 個 URL")
+                        logger.info(f"當前結果: sitemap={final_sitemap_count}, URL={final_url_count}, 跳過={skipped_count}, 錯誤={error_count}")
+                        raise
+                        
+                    except Exception as e:
+                        error_count += 1
+                        logger.warning(f"驗證 URL {url} 時發生錯誤: {e}，將其視為待爬取 URL")
+                        # 出錯時也嘗試保存為待爬取 URL
+                        try:
+                            discovered_url_model = DiscoveredURLModel(url=url)
+                            if db_ops.create_discovered_url(discovered_url_model):
+                                final_url_count += 1
+                                logger.debug(f"錯誤 URL 已保存為待爬取: {url}")
+                            else:
+                                logger.error(f"保存錯誤 URL {url} 到資料庫也失敗")
+                        except Exception as save_error:
+                            logger.error(f"保存 URL {url} 到資料庫失敗: {save_error}")
+            
+            # 最終報告
+            total_time = asyncio.get_event_loop().time() - start_time
+            logger.info(f"域名 {domain_url} 處理完成 (耗時 {total_time:.1f}s):")
+            logger.info(f"  - 初始 sitemap: {len(initial_sitemaps)} 個")
+            logger.info(f"  - 新發現的 sitemap: {final_sitemap_count} 個") 
+            logger.info(f"  - 待爬取 URL: {final_url_count} 個")
+            logger.info(f"  - 跳過已存在: {skipped_count} 個")
+            logger.info(f"  - 處理錯誤: {error_count} 個")
+            logger.info(f"  - 總處理數量: {processed_count} 個")
+            logger.info(f"  - 成功率: {((final_sitemap_count + final_url_count)/(processed_count - skipped_count)*100) if (processed_count - skipped_count) > 0 else 100:.1f}%")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="URL 發現腳本：解析 Sitemaps 並將 URL 存入資料庫。")
