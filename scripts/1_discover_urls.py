@@ -38,24 +38,14 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # 全局计数器，用于跟踪处理进度
-BATCH_SAVE_SIZE = 10  # 每处理10个URL报告一次进度
+BATCH_SAVE_SIZE = 10  # 每處理10個 URL 報告一次進度
 
 def check_url_exists_in_db(db_ops, url: str) -> bool:
-    """检查 URL 是否已经存在于数据库中"""
+    """使用資料庫操作檢查 URL 是否已存在"""
     try:
-        # 检查是否在 discovered_urls 表中
-        response = db_ops.client.table("discovered_urls").select("id").eq("url", url).limit(1).execute()
-        if response.data:
-            return True
-        
-        # 检查是否在 sitemaps 表中  
-        response = db_ops.client.table("sitemaps").select("id").eq("url", url).limit(1).execute()
-        if response.data:
-            return True
-            
-        return False
+        return db_ops.url_exists(url)
     except Exception as e:
-        logger.warning(f"检查 URL {url} 是否存在时出错: {e}")
+        logger.warning(f"檢查 URL {url} 是否存在時出錯: {e}")
         return False
 
 async def main(domains: list[str]):

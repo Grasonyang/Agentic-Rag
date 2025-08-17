@@ -40,7 +40,7 @@ CREATE TABLE article_chunks (
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- HNSW 索引用於高效向量搜索 (Supabase 推薦)
+-- HNSW 索引用於高效向量搜索
 CREATE INDEX idx_article_chunks_embedding ON article_chunks 
 USING hnsw (embedding vector_cosine_ops) 
 WITH (m = 16, ef_construction = 64);
@@ -167,16 +167,14 @@ class SitemapType(Enum):
 ### 1. 資料庫連接
 
 ```python
-from database.client import SupabaseClient
+from database.client import PostgresClient
 from database.operations import DatabaseOperations
 
 # 初始化資料庫連接
-client = SupabaseClient()
-db = DatabaseOperations()
+client = PostgresClient()
+db = DatabaseOperations(client)
 
-# 測試連接
-if client.test_connection():
-    print("資料庫連接成功！")
+print("資料庫連接成功！")
 ```
 
 ### 2. 文章操作
@@ -433,27 +431,6 @@ for table in table_sizes.data:
 
 ## 🔒 權限與安全
 
-### Supabase 權限設定
-
-```sql
--- 為 anon 角色提供讀取權限 (公開 API)
-GRANT SELECT ON articles TO anon;
-GRANT SELECT ON article_chunks TO anon;
-GRANT SELECT ON search_logs TO anon;
-GRANT SELECT ON crawl_logs TO anon;
-
--- 為 authenticated 角色提供完整權限
-GRANT ALL ON articles TO authenticated;
-GRANT ALL ON article_chunks TO authenticated;
-GRANT ALL ON search_logs TO authenticated;
-GRANT ALL ON crawl_logs TO authenticated;
-
--- RPC 函數權限
-GRANT EXECUTE ON FUNCTION semantic_search TO anon;
-GRANT EXECUTE ON FUNCTION get_system_stats TO anon;
-GRANT EXECUTE ON FUNCTION get_all_tables TO anon;
-```
-
 ### 安全最佳實踐
 
 1. **使用環境變數**: 敏感資訊如資料庫密鑰應存放在 `.env` 檔案中
@@ -469,8 +446,8 @@ GRANT EXECUTE ON FUNCTION get_all_tables TO anon;
    ```python
    # 檢查環境變數
    import os
-   print("SUPABASE_URL:", os.getenv('SUPABASE_URL'))
-   print("SUPABASE_KEY:", os.getenv('SUPABASE_KEY'))
+   print("DB_HOST:", os.getenv('DB_HOST'))
+   print("DB_USER:", os.getenv('DB_USER'))
    ```
 
 2. **向量維度錯誤**
@@ -482,9 +459,9 @@ GRANT EXECUTE ON FUNCTION get_all_tables TO anon;
 
 3. **權限錯誤**
    ```python
-   # 檢查是否使用正確的 API 金鑰
+   # 確認資料庫使用者具備足夠權限
    try:
-       result = client.supabase.from_('articles').select('count').execute()
+       db.execute_query("SELECT 1")
        print("權限正常")
    except Exception as e:
        print(f"權限錯誤: {e}")
@@ -492,7 +469,6 @@ GRANT EXECUTE ON FUNCTION get_all_tables TO anon;
 
 ## 📚 相關資源
 
-- [Supabase 官方文件](https://supabase.com/docs)
 - [pgvector 使用指南](https://github.com/pgvector/pgvector)
 - [PostgreSQL UUID 最佳實踐](https://www.postgresql.org/docs/current/datatype-uuid.html)
 - [HNSW 索引優化](https://github.com/pgvector/pgvector#hnsw)

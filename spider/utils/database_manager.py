@@ -11,7 +11,7 @@ from dataclasses import dataclass
 import logging
 
 from database.operations import DatabaseOperations
-from database.client import SupabaseClient
+from database.client import PostgresClient
 from database.models import CrawlStatus
 from spider.utils.enhanced_logger import get_spider_logger
 from spider.utils.retry_manager import RetryManager, RetryConfig
@@ -91,7 +91,7 @@ class EnhancedDatabaseManager:
         self.config = config or DatabaseConfig()
         self.logger = get_spider_logger("database_manager")
         
-        self._client: Optional[SupabaseClient] = None
+        self._client: Optional[PostgresClient] = None
         self._db_ops: Optional[DatabaseOperations] = None
         self._health_monitor = DatabaseHealthMonitor(self.config)
         self._retry_manager = RetryManager(RetryConfig(
@@ -132,19 +132,13 @@ class EnhancedDatabaseManager:
     async def _create_connection(self):
         """創建數據庫連接"""
         try:
-            self._client = SupabaseClient()
-            
-            # 測試連接
-            if self._client.test_connection():
-                client = self._client.get_client()
-                if client:
-                    self._db_ops = DatabaseOperations(client)
-                    self._stats["connection_recreated"] += 1
-                    self.logger.info("數據庫連接已創建")
-                else:
-                    raise Exception("無法獲取數據庫客戶端")
+            self._client = PostgresClient()
+            if self._client.connect():
+                self._db_ops = DatabaseOperations(self._client)
+                self._stats["connection_recreated"] += 1
+                self.logger.info("數據庫連接已創建")
             else:
-                raise Exception("數據庫連接測試失敗")
+                raise Exception("數據庫連接失敗")
                 
         except Exception as e:
             self.logger.error(f"創建數據庫連接失敗: {e}")

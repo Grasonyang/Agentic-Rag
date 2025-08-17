@@ -1,135 +1,63 @@
-# Agentic-Rag
+# Agentic RAG 系統
 
-這是一個基於 RAG (Retrieval-Augmented Generation) 架構的專案，透過網頁爬蟲獲取外部知識，並將其整合到語言模型中，以提供更準確、更具上下文的回答。
+這是一個實驗性的 Retrieval-Augmented Generation 專案，透過「漸進式抓取」與向量化搜尋為語言模型補充外部知識。
 
-## 專案架構
+## ✨ 特色
+- **漸進式抓取**：依據 `robots.txt` 規範，在允許的範圍內分批抓取內容，避免一次性全量下載。
+- **模組化設計**：爬蟲、向量化與資料儲存皆以獨立模組呈現，方便維護與擴充。
+- **PostgreSQL 儲存**：以原生 PostgreSQL 作為主要資料庫，提高寫入效率。
+- **可選 Supabase 遷移**：透過 `make migrate-supabase` 將資料匯入 Supabase 以享受託管服務。
 
-本專案主要包含以下幾個部分：
+## 📁 專案結構
+```
+agentic_rag/
+├── database/        # PostgreSQL 客戶端與操作
+├── embedding/       # 向量嵌入服務
+├── spider/          # 網頁爬蟲與解析工具
+├── scripts/         # 指令腳本與資料庫維護工具
+└── Makefile         # 常用指令入口
+```
 
-1.  **網頁爬蟲 (Web Crawler)**: 負責從指定的 URL 抓取網頁內容。
-2.  **內容處理 (Content Processing)**: 清理和轉換抓取到的 HTML 內容，例如轉換為 Markdown 格式。
-3.  **文本切塊 (Chunking)**: 將處理後的文本切割成較小的片段，以便於嵌入。
-4.  **嵌入 (Embedding)**: 使用指定的模型將文本片段轉換為向量。
-5.  **儲存 (Storage)**: 將嵌入向量和原始文本儲存在 Supabase (Postgres) 資料庫中。
+## ⚙️ 環境設定
+1. 複製範本：`cp .env.template .env`
+2. 編輯 `.env`，設定 PostgreSQL 連線資訊與模型名稱，例如：
+   ```env
+   DB_HOST=localhost
+   DB_PORT=5432
+   DB_USER=postgres
+   DB_PASSWORD=secret
+   DB_NAME=rag
+   EMBEDDING_MODEL=BAAI/bge-large-zh-v1.5
+   ```
 
-## 環境設定
+## 🚀 常用指令
+所有流程皆透過 `Makefile` 管理：
 
-在開始之前，您需要設定必要的環境變數。
+| 指令 | 說明 |
+|------|------|
+| `make discover DOMAIN=https://example.com` | 解析 sitemap 並寫入待爬取 URL |
+| `make crawl MAX_URLS=100` | 依據資料庫中的 URL 進行內容抓取 |
+| `make embed LIMIT=100` | 為新文章產生向量嵌入 |
+| `make search QUERY="關鍵問題"` | 進行語義搜尋 |
+| `make migrate-supabase` | 將 PostgreSQL 資料遷移至 Supabase |
 
-1.  **複製環境變數範本**
+## 🗺️ 漸進式抓取策略
+1. 先讀取 `robots.txt` 決定允許抓取的路徑。
+2. 解析 sitemap，將新發現的頁面 URL 寫入資料庫。
+3. 依狀態欄位逐批取出待爬取 URL，遇到錯誤會標記並稍後重試。
+4. 將成功抓取的文章分塊並生成向量，方便後續搜尋。
 
-    將 `.env.template` 檔案複製為 `.env`。此檔案包含所有必要的設定選項。
+## 🔄 遷移至 Supabase
+若需將資料同步到 Supabase，可執行：
+```bash
+make migrate-supabase
+```
+此指令會呼叫 `scripts/database/migrate_to_supabase.py`，示範如何從本地 PostgreSQL 讀取資料並寫入 Supabase。可依需求擴充遷移邏輯。
 
-    ```bash
-    cp .env.template .env
-    ```
+## 🧪 測試
+```bash
+pytest
+```
 
-    **重要提示**: `.env` 檔案包含敏感資訊，例如資料庫密碼和 API 金鑰。**切勿**將此檔案提交到任何版本控制系統（如 Git）。專案中已包含 `.gitignore` 檔案來防止這種情況。
-
-2.  **填寫 `.env` 檔案**
-
-    打開 `.env` 檔案並填寫您的實際配置值。
-
-    ```shell
-    # Supabase Postgres Configuration
-    DB_USER=postgres
-    DB_PASSWORD=your_db_password # <-- 填寫您的資料庫密碼
-    DB_HOST=db
-    DB_PORT=5432
-    DB_NAME=postgres
-    
-    POSTGRES_PASSWORD=your_postgres_password # <-- 填寫您的 Postgres 密碼
-    JWT_SECRET=your_jwt_secret # <-- 填寫您的 JWT Secret
-    ANON_KEY=your_anon_key # <-- 填寫您的 Supabase Anon Key
-    SERVICE_ROLE_KEY=your_service_role_key # <-- 填寫您的 Supabase Service Role Key
-    ...
-    ```
-
-## 主要設定選項
-
-您可以在 `.env` 檔案中調整以下設定：
-
-### Supabase & 資料庫
-- `DB_USER`, `DB_PASSWORD`, `DB_HOST`, `DB_PORT`, `DB_NAME`: Postgres 資料庫連線資訊。
-- `JWT_SECRET`, `ANON_KEY`, `SERVICE_ROLE_KEY`: Supabase 認證金鑰。
-
-### 嵌入模型
-- `EMBEDDING_MODEL`: 用於將文本轉換為向量的 Hugging Face 模型。預設為 `BAAI/bge-large-zh-v1.5`。
-
-### 文本切塊
-- `CHUNK_WINDOW_SIZE`: 每個文本片段的大小。
-- `CHUNK_STEP_SIZE`: 相鄰文本片段之間的移動步長。
-
-### 網頁爬蟲
-- `CRAWLER_HEADLESS`: 是否以無頭模式執行瀏覽器。
-- `CRAWLER_DELAY`: 每個請求之間的延遲（秒）。
-- `CRAWLER_TIMEOUT`: 請求超時時間（毫秒）。
-- `CRAWLER_MAX_CONCURRENT`: 最大並行請求數。
-- `TARGET_URL`: 爬蟲開始的目標網址。
-
-### 內容處理
-- `PREFERRED_CONTENT_FORMAT`: 偏好的內容輸出格式 (`html`, `markdown`, `plain_text`, `json`)。
-- `PRESERVE_HTML_STRUCTURE`: 是否保留原始 HTML 結構。
-- `CONVERT_TO_MARKDOWN`: 是否將 HTML 轉換為 Markdown。
-- `CLEAN_WHITESPACE`: 是否清理多餘的空白字元。
-
-### 輸出
-- `RESULTS_DIR`: 儲存處理結果的目錄。
-- `MAX_URLS_TO_PROCESS`: 限制爬蟲處理的 URL 數量。
-
-## 如何執行
-
-1.  **安裝依賴** (假設使用 Python)
-    ```bash
-    pip install -r requirements.txt
-    ```
-
-2.  **啟動服務** (如果使用 Docker)
-    ```bash
-    docker-compose up -d
-    ```
-
-3.  **執行主程式**
-    ```bash
-    python main.py
-    ```
-
-
-### 架構
-```mermaid
-flowchart TB
-  subgraph WorkerCluster["Worker Nodes per domain"]
-    direction LR
-    WorkerA["Worker Node - siteA.com"]
-    WorkerB["Worker Node - siteB.org"]
-  end
-
-  subgraph RAGSystem["Agentic RAG System - Master Worker Architecture"]
-    direction TB
-    Master["Master Node"]
-    WorkerCluster
-  end
-
-  Crawl4ai["crawl4ai - crawler service"] -. Scraped content .-> Master
-  Master -. Send to embed .-> WorkerA & WorkerB
-  WorkerA -. Store embeddings .-> Supabase["Supabase (pgvector + API)"]
-  WorkerB -. Store embeddings .-> Supabase
-
-  User["User"] -- Query API --> Master
-  Master -- Dispatch query --> WorkerA & WorkerB
-  WorkerA -- Vector search --> Supabase
-  WorkerB -- Vector search --> Supabase
-  WorkerA -- Return result --> Master
-  WorkerB -- Return result --> Master
-  Master -- Final answer --> User
-
-  WorkerA:::Aqua
-  WorkerB:::Aqua
-  Master:::Rose
-  Crawl4ai:::Aqua
-  Crawl4ai:::Peach
-  User:::Peach
-
-  classDef Rose stroke-width:1px, stroke-dasharray:none, stroke:#FF5978, fill:#FFDFE5, color:#8E2236
-  classDef Aqua stroke-width:1px, stroke-dasharray:none, stroke:#46EDC8, fill:#DEFFF8, color:#378E7A
-  classDef Peach stroke-width:1px, stroke-dasharray:none, stroke:#FBB35A, fill:#FFEFDB, color:#8F632D
+---
+如有建議或問題，歡迎提出 Issue，一同改進這個實驗專案。
