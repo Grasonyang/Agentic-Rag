@@ -4,6 +4,17 @@
 
 ## 工作流程腳本
 
+### auto_pipeline.py - 自動化流程
+**目的：** 依序執行 discover、crawl、embed 三個腳本，可設定批次大小與週期。
+
+```bash
+python -m scripts.auto_pipeline --domain https://example.com --batch_size 100 --schedule 3600
+```
+
+**功能：**
+- 單次執行或以秒為單位的長駐排程
+- 整合標準 logging 與 enhanced_logger 追蹤進度
+
 ### 1. getSiteMap.py - 網站地圖發現
 **目的：** 發現和分析目標網站的 sitemap 結構
 
