@@ -23,7 +23,8 @@ from database.operations import get_database_operations
 from embedding.embedding import embed_text
 from scripts.utils import get_script_logger
 
-logger = get_script_logger("semantic_search")
+# 建立日誌器
+logger = get_script_logger("search")
 
 
 # 控制台輸出顏色

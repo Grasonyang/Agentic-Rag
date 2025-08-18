@@ -23,7 +23,8 @@ from scripts.utils import get_script_logger
 # 載入環境設定
 load_config()
 
-logger = get_script_logger("discover_urls")
+# 建立日誌器
+logger = get_script_logger("discover")
 
 async def main(domains: list[str]) -> None:
     """主程式入口"""

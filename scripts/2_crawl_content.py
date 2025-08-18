@@ -23,7 +23,8 @@ from scripts.utils import get_script_logger
 # 載入環境設定
 load_config()
 
-logger = get_script_logger("crawl_content")
+# 建立日誌器
+logger = get_script_logger("crawl")
 
 
 async def main(batch_size: int) -> None:

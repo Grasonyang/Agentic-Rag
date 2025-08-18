@@ -25,7 +25,8 @@ from spider.chunking.sentence_chunking import SentenceChunking, SentenceChunking
 from embedding.embedding import embed_text, get_embedding_dimension
 from scripts.utils import get_script_logger
 
-logger = get_script_logger("process_and_embed")
+# 建立日誌器
+logger = get_script_logger("embed")
 
 def main(limit: int):
     """

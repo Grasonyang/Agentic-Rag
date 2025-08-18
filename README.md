@@ -46,7 +46,7 @@ agentic_rag/
 例如可透過以下指令即時查看執行狀況：
 
 ```bash
-tail -f logs/discover_urls.log
+tail -f logs/discover.log
 ```
 
 ## 🗺️ 漸進式抓取策略
