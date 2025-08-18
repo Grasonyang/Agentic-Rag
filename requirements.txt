@@ -8,4 +8,5 @@ supabase
 psycopg2
 
 # testing
+pytest
 pytest-asyncio
