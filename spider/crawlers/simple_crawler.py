@@ -21,6 +21,7 @@ from typing import Dict, List, Optional
 import re
 from spider.utils.connection_manager import EnhancedConnectionManager
 from spider.utils.database_manager import EnhancedDatabaseManager
+from spider.utils.rate_limiter import RateLimiter
 from database.models import ArticleModel
 
 
@@ -31,8 +32,12 @@ class SimpleWebCrawler:
         self,
         connection_manager: Optional[EnhancedConnectionManager] = None,
         db_manager: Optional[EnhancedDatabaseManager] = None,
+        rate_limiter: Optional[RateLimiter] = None,
     ):
-        self.connection_manager = connection_manager or EnhancedConnectionManager()
+        # 若外部未提供連線管理器，則使用傳入的速率限制器建立
+        self.connection_manager = connection_manager or EnhancedConnectionManager(
+            rate_limiter=rate_limiter
+        )
         self.db_manager = db_manager
         self.cookies: Dict[str, str] = {}
 

@@ -25,6 +25,7 @@ from database.operations import get_database_operations
 from database.models import DiscoveredURLModel, SitemapModel
 from spider.crawlers.sitemap_parser import SitemapParser
 from spider.utils.connection_manager import EnhancedConnectionManager
+from spider.utils.rate_limiter import RateLimiter, RateLimitConfig
 
 # 載入 .env 配置
 load_config()
@@ -62,8 +63,16 @@ async def main(domains: list[str]):
         logger.error("無法初始化資料庫連接，腳本終止。")
         return
 
+    # 建立全域速率限制器
+    rate_limiter = RateLimiter(
+        RateLimitConfig(
+            requests_per_second=float(os.getenv("RATE_LIMIT_RPS", 2.0)),
+            burst_size=int(os.getenv("RATE_LIMIT_BURST", 5)),
+        )
+    )
+
     # 創建連接管理器和 sitemap 解析器
-    async with EnhancedConnectionManager() as connection_manager:
+    async with EnhancedConnectionManager(rate_limiter=rate_limiter) as connection_manager:
         sitemap_parser = SitemapParser(connection_manager)
 
         for domain_url in domains:
