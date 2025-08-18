@@ -97,8 +97,10 @@ class ProgressiveCrawler:
         visited_domains: set[str] = set()
 
         async def worker(u):
-            async with sem:
+            try:
                 await self._process_url(u)
+            finally:
+                sem.release()
 
         async for u in self.scheduler.dequeue_stream(self.batch_size):
             domain = getattr(u, "domain", urlparse(u.url).netloc)
@@ -116,13 +118,11 @@ class ProgressiveCrawler:
                     self.logger.warning(f"無法下載 {domain} 的 robots.txt: {e}")
                 visited_domains.add(domain)
 
+            await sem.acquire()
             task = asyncio.create_task(worker(u))
             tasks.add(task)
             task.add_done_callback(tasks.discard)
             processed += 1
-
-            if len(tasks) >= self.concurrency:
-                await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
 
         if tasks:
             await asyncio.gather(*tasks)

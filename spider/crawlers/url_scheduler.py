@@ -100,13 +100,15 @@ class URLScheduler:
         return total
 
     async def dequeue_stream(self, batch_size: int):
-        """以串流方式取出待處理的 URL"""
+        """以串流方式逐批取出待處理 URL"""
 
         while True:
             batch = await self.db_manager.get_pending_urls(batch_size)
             if not batch:
                 break
             for item in batch:
+                # 先將狀態設為 CRAWLING，避免重複讀取
+                await self.update_status(item.id, CrawlStatus.CRAWLING)
                 yield item
 
     async def update_status(self, url_id: str, status: CrawlStatus, error_message: str | None = None) -> bool:
