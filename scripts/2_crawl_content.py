@@ -23,7 +23,6 @@ from scripts.utils import get_script_logger
 # 載入環境設定
 load_config()
 
-# 建立日誌器
 logger = get_script_logger("crawl")
 
 
@@ -35,6 +34,7 @@ async def main(batch_size: int) -> None:
         crawler = ProgressiveCrawler(scheduler, cm, RetryManager(), batch_size=batch_size)
         processed = await crawler.crawl_batch()
         logger.info(f"本次處理 {processed} 個 URL")
+        logger.log_statistics()
 
 
 if __name__ == "__main__":

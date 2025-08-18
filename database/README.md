@@ -235,12 +235,7 @@ results = db.semantic_search(
     match_threshold=0.75,
     match_count=5
 )
-
-for result in results:
-    print(f"相似度: {result['similarity']:.3f}")
-    print(f"內容: {result['content'][:100]}...")
-    print(f"來源: {result['article_url']}")
-    print("-" * 50)
+print(f"回傳 {len(results)} 筆結果，可在日誌查看詳細內容")
 ```
 
 ### 5. Sitemap 管理
@@ -285,11 +280,7 @@ print("搜索結果:", results.data)
 ```python
 # 獲取系統統計
 stats = client.supabase.rpc('get_system_stats').execute()
-print(f"總文章數: {stats.data['total_articles']}")
-print(f"總分塊數: {stats.data['total_chunks']}")
-print(f"成功爬取: {stats.data['successful_crawls']}")
-print(f"失敗爬取: {stats.data['failed_crawls']}")
-print(f"資料庫大小: {stats.data['database_size_mb']} MB")
+print("系統統計:", stats.data)
 ```
 
 ### 3. 表格資訊查詢
@@ -297,8 +288,7 @@ print(f"資料庫大小: {stats.data['database_size_mb']} MB")
 ```python
 # 獲取所有表格資訊
 tables = client.supabase.rpc('get_all_tables').execute()
-for table in tables.data:
-    print(f"表格: {table['table_name']}, 記錄數: {table['row_count']}")
+print(f"共 {len(tables.data)} 個表格，可在日誌查看詳細資訊")
 ```
 
 ## 🔍 進階查詢
@@ -325,14 +315,11 @@ from urllib.parse import urlparse
 
 domain_stats = {}
 articles = client.supabase.from_('articles').select('url').execute()
-
 for article in articles.data:
     domain = urlparse(article['url']).netloc
     domain_stats[domain] = domain_stats.get(domain, 0) + 1
 
-print("各域名文章統計:")
-for domain, count in sorted(domain_stats.items(), key=lambda x: x[1], reverse=True):
-    print(f"{domain}: {count} 篇")
+print(f"統計 {len(domain_stats)} 個域名，可在日誌查看詳細數據")
 ```
 
 ### 3. 時間範圍查詢
@@ -391,8 +378,7 @@ print(f"更新了 {len(articles.data)} 篇文章的字數統計")
 ```python
 # 檢查索引使用情況
 index_stats = client.supabase.rpc('get_index_usage').execute()
-for stat in index_stats.data:
-    print(f"索引 {stat['indexname']}: 使用次數 {stat['idx_scan']}")
+print(f"取得 {len(index_stats.data)} 筆索引資訊，詳情請參閱日誌")
 ```
 
 ## 📈 性能監控
@@ -410,13 +396,9 @@ results = db.semantic_search(
     query_embedding=test_embedding,
     match_count=100
 )
-
 end_time = time.time()
 duration_ms = (end_time - start_time) * 1000
-
-print(f"搜索耗時: {duration_ms:.2f} ms")
-print(f"結果數量: {len(results)}")
-print(f"平均每結果耗時: {duration_ms/len(results):.2f} ms")
+print(f"搜尋 {len(results)} 筆結果，耗時 {duration_ms:.2f} ms")
 ```
 
 ### 2. 資料庫大小監控
@@ -424,9 +406,7 @@ print(f"平均每結果耗時: {duration_ms/len(results):.2f} ms")
 ```python
 # 監控各表的大小
 table_sizes = client.supabase.rpc('get_table_sizes').execute()
-
-for table in table_sizes.data:
-    print(f"{table['table_name']}: {table['size_mb']} MB")
+print(f"監控 {len(table_sizes.data)} 個表格大小，詳情見日誌")
 ```
 
 ## 🔒 權限與安全
