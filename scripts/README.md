@@ -15,6 +15,20 @@ python -m scripts.auto_pipeline --domain https://example.com --batch_size 100 --
 - 單次執行或以秒為單位的長駐排程
 - 整合標準 logging 與 enhanced_logger 追蹤進度
 
+### load_test.py - 負載測試
+**目的：** 模擬大量 URL 排程與抓取，評估系統吞吐量。
+
+```bash
+python -m scripts.load_test --total 300000 --batch_size 100 --concurrency 20 --rps 50
+```
+
+**功能：**
+- 產生或模擬大量 URL 並寫入 URLScheduler
+- 使用 ProgressiveCrawler 與 EnhancedConnectionManager 模擬 200 OK 抓取
+- 記錄處理時間、記憶體使用與錯誤率
+- 可依結果調整 batch_size、concurrency、RateLimiter 或資料庫索引
+- 吞吐量不足時建議採用 Redis 佇列或分散式 worker
+
 ### 1. getSiteMap.py - 網站地圖發現
 **目的：** 發現和分析目標網站的 sitemap 結構
 
