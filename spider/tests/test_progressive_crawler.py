@@ -109,7 +109,12 @@ async def test_crawl_batch_order_and_status() -> None:
     ]
     scheduler = FakeScheduler(urls)
     conn = FakeConnectionManager()
-    crawler = ProgressiveCrawler(scheduler, conn, FakeRetryManager(), batch_size=10)
+    crawler = ProgressiveCrawler(
+        scheduler,
+        FakeRetryManager(),
+        connection_manager=conn,
+        batch_size=10,
+    )
 
     processed = await crawler.crawl_batch()
 
@@ -126,7 +131,12 @@ async def test_crawl_batch_error_resets_pending() -> None:
     urls = [FakeURL("1", "http://example.com/fail")]
     scheduler = FakeScheduler(urls)
     conn = FakeConnectionManager()
-    crawler = ProgressiveCrawler(scheduler, conn, FakeRetryManager(), batch_size=10)
+    crawler = ProgressiveCrawler(
+        scheduler,
+        FakeRetryManager(),
+        connection_manager=conn,
+        batch_size=10,
+    )
 
     await crawler.crawl_batch()
 

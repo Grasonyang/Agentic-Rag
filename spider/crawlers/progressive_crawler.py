@@ -5,11 +5,13 @@
 """
 
 import asyncio
+from typing import Optional
 
 from database.models import CrawlStatus
 from spider.utils.connection_manager import EnhancedConnectionManager
 from spider.utils.retry_manager import RetryManager
 from spider.utils.enhanced_logger import get_spider_logger
+from spider.utils.rate_limiter import AdaptiveRateLimiter
 from .url_scheduler import URLScheduler
 
 
@@ -19,8 +21,8 @@ class ProgressiveCrawler:
     def __init__(
         self,
         scheduler: URLScheduler,
-        connection_manager: EnhancedConnectionManager,
         retry_manager: RetryManager,
+        connection_manager: Optional[EnhancedConnectionManager] = None,
         batch_size: int = 10,
         concurrency: int = 5,
     ) -> None:
@@ -28,13 +30,16 @@ class ProgressiveCrawler:
 
         Args:
             scheduler: URL 排程器
-            connection_manager: 連線管理器
             retry_manager: 重試管理器
+            connection_manager: 連線管理器
             batch_size: 每次抓取的 URL 數量
             concurrency: 同時處理的工作數
         """
+        cm = connection_manager or EnhancedConnectionManager(
+            rate_limiter=AdaptiveRateLimiter()
+        )
         self.scheduler = scheduler
-        self.connection_manager = connection_manager
+        self.connection_manager = cm
         self.retry_manager = retry_manager
         self.batch_size = batch_size
         self.concurrency = concurrency

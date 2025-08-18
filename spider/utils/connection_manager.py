@@ -175,7 +175,11 @@ class EnhancedConnectionManager:
             auto_decompress=True,
             raise_for_status=False
         )
-        
+
+        # 若限速器提供 crawl4ai 套用方法，則在此註冊 hook
+        if hasattr(self._rate_limiter, "apply_to_crawl4ai"):
+            self._rate_limiter.apply_to_crawl4ai(self._session)
+
         self._stats["session_recreated"] += 1
         self.logger.info("HTTP 會話已創建")
         return self._session
