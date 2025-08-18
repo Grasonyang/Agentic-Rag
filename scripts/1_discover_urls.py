@@ -16,6 +16,11 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from config_manager import load_config
 from spider.crawlers.sitemap_parser import SitemapParser
 from spider.crawlers.url_scheduler import URLScheduler
+from spider.crawlers.robots_handler import (
+    fetch_and_parse,
+    get_crawl_delay,
+    is_allowed,
+)
 from spider.utils.connection_manager import EnhancedConnectionManager
 from spider.utils.database_manager import EnhancedDatabaseManager
 from scripts.utils import get_script_logger
@@ -26,6 +31,9 @@ load_config()
 # 建立日誌器
 logger = get_script_logger("discover")
 
+# 允許的最大 crawl-delay 秒數
+MAX_CRAWL_DELAY = 30
+
 async def main(domains: list[str]) -> None:
     """主程式入口"""
     async with EnhancedDatabaseManager() as db_manager:
@@ -35,6 +43,22 @@ async def main(domains: list[str]) -> None:
                 parser = SitemapParser(connection_manager)
                 for domain in domains:
                     logger.info(f"開始解析 {domain} 的 sitemap")
+
+                    # 解析 robots.txt 並檢查限制
+                    await fetch_and_parse(domain, connection_manager)
+                    root_url = (
+                        domain if domain.startswith("http") else f"https://{domain}/"
+                    )
+                    if not await is_allowed(root_url, connection_manager):
+                        logger.warning("該網站禁止爬取，略過此網域")
+                        continue
+                    crawl_delay = await get_crawl_delay(domain, connection_manager)
+                    if crawl_delay and crawl_delay > MAX_CRAWL_DELAY:
+                        logger.warning(
+                            f"crawl-delay {crawl_delay}s 過大，略過此網域"
+                        )
+                        continue
+
                     await parser.stream_discover(domain, scheduler)
                     logger.info(f"完成解析 {domain}")
         finally:

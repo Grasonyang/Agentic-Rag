@@ -38,20 +38,6 @@ async def run_once(domain: str, batch_size: int):
     """執行一次完整流程"""
     logger.info("開始執行一次管線流程")
 
-    # 先檢查 robots.txt 規範
-    async with EnhancedConnectionManager() as cm:
-        await fetch_and_parse(domain, cm)
-        root_url = domain if domain.startswith("http") else f"https://{domain}/"
-        if not await is_allowed(root_url, cm):
-            logger.warning("該網站禁止爬取，終止流程")
-            return
-        crawl_delay = await get_crawl_delay(domain, cm)
-        if crawl_delay and crawl_delay > MAX_CRAWL_DELAY:
-            logger.warning(
-                f"crawl-delay {crawl_delay}s 過大，終止流程",
-            )
-            return
-
     # discover 與 crawl 併發執行
     discover = import_script("1_discover_urls")
     crawl = import_script("2_crawl_content")
@@ -76,6 +62,23 @@ async def schedule_loop(domain: str, batch_size: int, interval: int):
         await asyncio.sleep(interval)
 
 
+async def verify_robots(domain: str) -> bool:
+    """解析 robots.txt 並檢查限制"""
+    async with EnhancedConnectionManager() as cm:
+        await fetch_and_parse(domain, cm)
+        root_url = domain if domain.startswith("http") else f"https://{domain}/"
+        if not await is_allowed(root_url, cm):
+            logger.warning("該網站禁止爬取，終止流程")
+            return False
+        crawl_delay = await get_crawl_delay(domain, cm)
+        if crawl_delay and crawl_delay > MAX_CRAWL_DELAY:
+            logger.warning(
+                f"crawl-delay {crawl_delay}s 過大，終止流程",
+            )
+            return False
+    return True
+
+
 def main():
     """解析參數並啟動流程"""
     parser = argparse.ArgumentParser(description="自動化爬蟲流程")
@@ -83,6 +86,10 @@ def main():
     parser.add_argument("--batch_size", type=int, default=100, help="每輪處理的最大數量")
     parser.add_argument("--schedule", type=int, help="以秒為單位的執行間隔；若未設定則僅執行一次")
     args = parser.parse_args()
+
+    # 解析 robots.txt，若不允許則終止
+    if not asyncio.run(verify_robots(args.domain)):
+        return
 
     if args.schedule:
         logger.info(f"啟動長駐模式，間隔 {args.schedule} 秒")
