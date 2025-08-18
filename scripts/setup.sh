@@ -5,10 +5,10 @@ set -e
 
 # --- 步驟 0: 更新系統套件並安裝必要的開發工具 ---
 echo "🔄  正在更新 apt 套件列表..."
-apt-get update
+sudo apt-get update
 
 echo "🛠️  正在安裝 build-essential, libpq-dev, python3-dev, pkg-config..."
-apt-get install -y build-essential libpq-dev python3-dev pkg-config
+sudo apt-get install -y build-essential libpq-dev python3-dev pkg-config
 
 # --- 步驟 1: 安裝 Python 依賴 ---
 echo "📦  正在從 requirements.txt 安裝 Python 依賴..."
@@ -35,10 +35,10 @@ echo "現在您可以開始使用 make 命令 (例如: make run-pipeline) 來執
 echo "🐘  正在安裝並設定 PostgreSQL 資料庫..."
 
 # 更新 apt 套件列表 (再次確認，以防萬一)
-apt-get update
+sudo apt-get update
 
 # 安裝 PostgreSQL 及其 contrib 模組
-apt-get install -y postgresql postgresql-contrib
+sudo apt-get install -y postgresql postgresql-contrib
 
 # --- 在非 systemd 環境中啟動 PostgreSQL ---
 echo "🚀  正在啟動 PostgreSQL 服務..."
