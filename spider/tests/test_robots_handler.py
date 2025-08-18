@@ -2,6 +2,7 @@
 
 # 註解使用繁體中文
 
+import logging
 import pytest
 
 from spider.crawlers import robots_handler
@@ -35,6 +36,14 @@ class FakeConnectionManager:
         return FakeResponse(content)
 
 
+class ErrorConnectionManager:
+    """回傳錯誤狀態碼的連線管理器"""
+
+    async def get(self, url: str) -> FakeResponse:  # noqa: D401
+        """模擬取得 404 回應"""
+        return FakeResponse("", status=404)
+
+
 @pytest.mark.asyncio
 async def test_fetch_and_parse_caches() -> None:
     """驗證 `fetch_and_parse` 能寫入快取"""
@@ -62,3 +71,18 @@ async def test_is_allowed_and_get_crawl_delay() -> None:
     assert await robots_handler.is_allowed("https://example.com/public", cm) is True
     assert await robots_handler.is_allowed("https://example.com/private/data", cm) is False
     assert await robots_handler.get_crawl_delay("https://example.com", cm) == 3
+
+
+@pytest.mark.asyncio
+async def test_fetch_and_parse_logs_error(caplog) -> None:
+    """當取得 robots.txt 失敗時應記錄錯誤"""
+
+    robots_handler._robots_cache.clear()
+    robots_handler._crawl_delay_cache.clear()
+
+    cm = ErrorConnectionManager()
+
+    with caplog.at_level(logging.ERROR, logger="robots_handler"):
+        await robots_handler.fetch_and_parse("https://example.com", cm)
+
+    assert any("404" in record.message for record in caplog.records)
