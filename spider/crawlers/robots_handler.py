@@ -52,8 +52,8 @@ async def fetch_and_parse(domain: str, connection_manager: Optional[EnhancedConn
                     # 成功取得 robots.txt 時輸出除錯訊息
                     logger.debug(f"成功取得 {robots_url}")
                 else:
-                    # 取得 robots.txt 失敗時紀錄錯誤
-                    logger.error(
+                    # 取得 robots.txt 失敗時以警告紀錄
+                    logger.warning(
                         f"無法取得 {robots_url}，狀態碼 {response.status}"
                     )
                     rp.parse([])
@@ -67,13 +67,13 @@ async def fetch_and_parse(domain: str, connection_manager: Optional[EnhancedConn
                     _crawl_delay_cache[netloc] = delay
                 logger.debug(f"成功取得 {robots_url}")
             else:
-                logger.error(
+                logger.warning(
                     f"無法取得 {robots_url}，狀態碼 {response.status}"
                 )
                 rp.parse([])
     except Exception as e:  # noqa: BLE001
-        # 捕捉未知例外並記錄
-        logger.error(f"下載 {robots_url} 時發生例外: {e}")
+        # 捕捉未知例外並記錄為警告
+        logger.warning(f"下載 {robots_url} 時發生例外: {e}")
         rp.parse([])
     finally:
         if close_manager:
