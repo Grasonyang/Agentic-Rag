@@ -30,12 +30,16 @@ async def main(domains: list[str]) -> None:
     """主程式入口"""
     async with EnhancedDatabaseManager() as db_manager:
         scheduler = URLScheduler(db_manager)
-        async with EnhancedConnectionManager() as connection_manager:
-            parser = SitemapParser(connection_manager)
-            for domain in domains:
-                logger.info(f"開始解析 {domain} 的 sitemap")
-                await parser.stream_discover(domain, scheduler)
-                logger.info(f"完成解析 {domain}")
+        try:
+            async with EnhancedConnectionManager() as connection_manager:
+                parser = SitemapParser(connection_manager)
+                for domain in domains:
+                    logger.info(f"開始解析 {domain} 的 sitemap")
+                    await parser.stream_discover(domain, scheduler)
+                    logger.info(f"完成解析 {domain}")
+        finally:
+            await scheduler.close()
+            logger.info("URL scheduler closed and remaining URLs flushed to DB.")
 
 
 if __name__ == "__main__":

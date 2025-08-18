@@ -4,8 +4,11 @@
 可依需求替換成 Redis 等分散式儲存，以支援多進程或多機環境。
 """
 
-from typing import Iterable, List, Any
+from typing import Iterable, List, Any, Optional
 from datetime import datetime
+from urllib.parse import urlparse
+from asyncio import Queue
+
 from database.models import DiscoveredURLModel, CrawlStatus
 from spider.utils.database_manager import EnhancedDatabaseManager
 
@@ -13,9 +16,38 @@ from spider.utils.database_manager import EnhancedDatabaseManager
 class URLScheduler:
     """以資料庫為儲存後端的 URL 排程器"""
 
-    def __init__(self, db_manager: EnhancedDatabaseManager) -> None:
+    def __init__(self, db_manager: EnhancedDatabaseManager, batch_size: int = 100) -> None:
         # 資料庫管理器
         self.db_manager = db_manager
+        self.batch_size = batch_size
+        self.url_queue: Queue[dict] = Queue()
+
+    def get_domain(self, url: str) -> str:
+        return urlparse(url).netloc
+
+    async def add_url(self, url: str, last_modified: Optional[datetime] = None, priority: float = 0.5) -> None:
+        url_info = {
+            "url": url,
+            "domain": self.get_domain(url),
+            "last_modified": last_modified,
+            "priority": priority,
+            "crawl_status": CrawlStatus.PENDING.value
+        }
+        await self.url_queue.put(url_info)
+        if self.url_queue.qsize() >= self.batch_size:
+            await self.flush_to_db()
+
+    async def flush_to_db(self) -> None:
+        batch = []
+        while not self.url_queue.empty() and len(batch) < self.batch_size:
+            batch.append(self.url_queue.get_nowait())
+        
+        if batch:
+            models = [DiscoveredURLModel(**item) for item in batch]
+            await self.db_manager.bulk_create_discovered_urls(models)
+
+    async def close(self) -> None:
+        await self.flush_to_db()
 
     async def enqueue_urls(self, urls: Iterable[Any], batch_size: int = 1000) -> int:
         """將多個 URL 以批次寫入佇列

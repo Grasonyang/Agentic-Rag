@@ -196,6 +196,7 @@ class EnhancedDatabaseManager:
     
     async def bulk_create_discovered_urls(self, url_models: List) -> int:
         """批量創建發現的URL記錄"""
+        self.logger.info(f"Bulk creating {len(url_models)} URL models: {url_models}")
         self._stats["batch_operations"] += 1
         
         # 分批處理大量數據

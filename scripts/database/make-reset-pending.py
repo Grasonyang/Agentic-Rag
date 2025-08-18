@@ -37,25 +37,14 @@ def reset_url_status(force=False):
 
     try:
         logger.info("Attempting to reset URLs with 'error' status to 'pending'...")
-        error_response = db_ops.client.table('discovered_urls').update({
-            'crawl_status': CrawlStatus.PENDING.value,
-            'error_message': None # Clear previous error message
-        }).eq('crawl_status', CrawlStatus.ERROR.value).execute()
-
-        if error_response.data:
-            logger.info(f"Successfully reset {len(error_response.data)} URLs from 'error' to 'pending'.")
-        else:
-            logger.info("No URLs with 'error' status found to reset.")
+        sql_error = f"UPDATE discovered_urls SET crawl_status = '{CrawlStatus.PENDING.value}', error_message = NULL WHERE crawl_status = '{CrawlStatus.ERROR.value}'"
+        db_ops.client.execute_query(sql_error, fetch=False)
+        logger.info("Finished attempting to reset URLs from 'error' to 'pending'. Check server logs for details.")
 
         logger.info("Attempting to set URLs with NULL status to 'pending'...")
-        null_response = db_ops.client.table('discovered_urls').update({
-            'crawl_status': CrawlStatus.PENDING.value
-        }).is_('crawl_status', None).execute()
-
-        if null_response.data:
-            logger.info(f"Successfully set {len(null_response.data)} URLs from NULL to 'pending'.")
-        else:
-            logger.info("No URLs with NULL status found to update.")
+        sql_null = f"UPDATE discovered_urls SET crawl_status = '{CrawlStatus.PENDING.value}' WHERE crawl_status IS NULL"
+        db_ops.client.execute_query(sql_null, fetch=False)
+        logger.info("Finished attempting to set URLs from NULL to 'pending'. Check server logs for details.")
 
         logger.info("Database update process finished.")
 
