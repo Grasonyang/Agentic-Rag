@@ -1,6 +1,6 @@
 
 # 爬蟲
-crawl4ai>=0.1.0
+crawl4ai
 aiohttp>=3.9.1
 requests>=2.31.0
 beautifulsoup4>=4.12.2
