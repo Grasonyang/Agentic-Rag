@@ -3,6 +3,26 @@
 
 set -e
 
+# Ensure .env exists so Makefile targets depending on it won't fail
+if [ ! -f .env ]; then
+    if [ -f .env.example ]; then
+        echo "📝  Found .env.example -> creating .env"
+        cp .env.example .env
+    elif [ -f .env.template ]; then
+        echo "📝  Found .env.template -> creating .env"
+        cp .env.template .env
+    else
+        echo "⚠️  No .env.example or .env.template found, creating minimal .env"
+        cat > .env <<'EOF'
+DB_HOST=localhost
+DB_PORT=5432
+DB_USER=postgres
+DB_PASSWORD=postgres
+DB_NAME=postgres
+EOF
+    fi
+fi
+
 # --- 步驟 0: 更新系統套件並安裝必要的開發工具 ---
 echo "🔄  正在更新 apt 套件列表..."
 sudo apt-get update
