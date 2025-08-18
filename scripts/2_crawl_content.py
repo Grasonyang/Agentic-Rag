@@ -25,6 +25,11 @@ from config_manager import load_config
 from database.operations import get_database_operations
 from database.models import ArticleModel, CrawlStatus
 from crawl4ai import AsyncWebCrawler, RateLimiter
+from spider.crawlers.robots_handler import (
+    fetch_and_parse,
+    is_allowed,
+    get_crawl_delay,
+)
 
 # 載入 .env 配置
 load_config()
@@ -73,6 +78,11 @@ async def main(max_urls: int):
 
     logger.info(f"從資料庫獲取了 {len(pending_urls)} 個待處理的 URL。")
 
+    # 先下載並解析各網域的 robots.txt 以利後續判斷
+    domains = {u.domain for u in pending_urls}
+    for domain in domains:
+        fetch_and_parse(domain)
+
     # 2. 逐一爬取並處理
     processed_count = 0
     success_count = 0
@@ -111,6 +121,18 @@ async def main(max_urls: int):
                 except Exception as e:
                     logger.error(f"爬虫初始化失败: {e}")
                     break
+
+            # 先確認 robots.txt 是否允許
+            if not is_allowed(url_model.url):
+                logger.info(f"URL 被 robots.txt 禁止: {url_model.url}")
+                db_ops.update_crawl_status(url_model.id, CrawlStatus.SKIPPED)
+                continue
+
+            # 若有設定 crawl-delay，於此等待
+            delay = get_crawl_delay(url_model.domain)
+            if delay:
+                logger.info(f"遵守 crawl-delay {delay} 秒")
+                await asyncio.sleep(delay)
 
             logger.info(f"正在處理 URL (ID: {url_model.id}): {url_model.url}")
 
@@ -178,9 +200,10 @@ async def main(max_urls: int):
                     db_ops.update_crawl_status(url_model.id, CrawlStatus.ERROR, error_message=error_message)
             
             processed_count += 1
-            
-            # 添加小延迟，减少资源压力
-            await asyncio.sleep(1)
+
+            # 根據 crawl-delay 或預設 1 秒延遲
+            delay = get_crawl_delay(url_model.domain) or 1
+            await asyncio.sleep(delay)
 
     finally:
         # 确保爬虫被正确关闭
