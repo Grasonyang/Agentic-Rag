@@ -1,7 +1,7 @@
 """robots.txt 非同步解析與快取處理"""
 
 from urllib.parse import urljoin, urlparse
-from typing import Dict, List, Optional
+from typing import Optional
 import types
 
 from spider.utils.connection_manager import EnhancedConnectionManager
@@ -11,9 +11,9 @@ from spider.utils.enhanced_logger import get_spider_logger
 logger = get_spider_logger("robots_handler")
 
 # 全域快取，避免重複下載 robots.txt
-_robots_cache: Dict[str, Dict[str, List[str]]] = {}
-_crawl_delay_cache: Dict[str, float] = {}
-_sitemaps_cache: Dict[str, List[str]] = {}
+_robots_cache: dict[str, dict[str, list[str]]] = {}
+_crawl_delay_cache: dict[str, float] = {}
+_sitemaps_cache: dict[str, list[str]] = {}
 
 # 預設使用的 User-Agent
 USER_AGENT = "*"
@@ -24,7 +24,7 @@ def _normalize_domain(domain: str) -> tuple[str, str]:
     base_url = f"{parsed.scheme}://{parsed.netloc}/"
     return parsed.netloc, base_url
 
-async def fetch_and_parse(domain: str, connection_manager: Optional[EnhancedConnectionManager] = None) -> List[str]:
+async def fetch_and_parse(domain: str, connection_manager: Optional[EnhancedConnectionManager] = None) -> list[str]:
     """非同步下載並解析指定網域的 robots.txt"""
     netloc, base_url = _normalize_domain(domain)
     if netloc in _robots_cache:
@@ -61,10 +61,10 @@ async def fetch_and_parse(domain: str, connection_manager: Optional[EnhancedConn
         if close_manager:
             await cm.close()
 
-    allows: List[str] = []
-    disallows: List[str] = []
+    allows: list[str] = []
+    disallows: list[str] = []
     crawl_delay: Optional[float] = None
-    sitemaps: List[str] = []
+    sitemaps: list[str] = []
     current_agent: Optional[str] = None
 
     for raw_line in text.splitlines():
@@ -132,7 +132,7 @@ async def get_crawl_delay(domain: str, connection_manager: Optional[EnhancedConn
         await fetch_and_parse(domain, connection_manager)
     return _crawl_delay_cache.get(netloc)
 
-async def get_sitemaps(domain: str, connection_manager: Optional[EnhancedConnectionManager] = None) -> List[str]:
+async def get_sitemaps(domain: str, connection_manager: Optional[EnhancedConnectionManager] = None) -> list[str]:
     """取得指定網域在 robots.txt 中宣告的 sitemap"""
     netloc, _ = _normalize_domain(domain)
     if netloc not in _robots_cache:

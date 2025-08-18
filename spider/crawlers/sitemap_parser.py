@@ -71,7 +71,8 @@ class SitemapParser:
         sitemaps_to_parse = await self._get_sitemaps(domain)
         if not sitemaps_to_parse:
             # 若 robots.txt 無宣告 sitemap，預設嘗試 sitemap.xml
-            sitemaps_to_parse.append(urljoin(domain, "sitemap.xml"))
+            base = domain if domain.startswith("http") else f"https://{domain}"
+            sitemaps_to_parse.append(urljoin(base, "sitemap.xml"))
 
         parsed_sitemaps = set()
 
@@ -103,7 +104,8 @@ class SitemapParser:
         """
         sitemaps_to_parse = await self._get_sitemaps(domain)
         if not sitemaps_to_parse:
-            sitemaps_to_parse.append(urljoin(domain, "sitemap.xml"))
+            base = domain if domain.startswith("http") else f"https://{domain}"
+            sitemaps_to_parse.append(urljoin(base, "sitemap.xml"))
 
         parsed_sitemaps = set()
 
