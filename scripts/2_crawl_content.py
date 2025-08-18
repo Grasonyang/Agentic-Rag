@@ -24,13 +24,14 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from config_manager import load_config
 from database.operations import get_database_operations
 from database.models import ArticleModel, CrawlStatus
-from crawl4ai import AsyncWebCrawler, RateLimiter
+from crawl4ai import AsyncWebCrawler
 from spider.crawlers.robots_handler import (
     fetch_and_parse,
     is_allowed,
     get_crawl_delay,
     apply_to_crawl4ai,
 )
+from spider.utils.rate_limiter import AdaptiveRateLimiter, RateLimitConfig
 
 # 載入 .env 配置
 load_config()
@@ -43,15 +44,15 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-def get_rate_limiter() -> RateLimiter:
-    """從環境變數讀取並回傳爬蟲設定"""
-    return RateLimiter(
-        base_delay=(
-            float(os.getenv("RATE_LIMIT_BASE_DELAY_MIN", 1.0)),
-            float(os.getenv("RATE_LIMIT_BASE_DELAY_MAX", 2.0)),
-        ),
-        max_delay=float(os.getenv("RATE_LIMIT_MAX_DELAY", 30.0)),
-        max_retries=int(os.getenv("RATE_LIMIT_MAX_RETRIES", 2)),
+def get_rate_limiter() -> AdaptiveRateLimiter:
+    """從環境變數讀取並回傳自適應速率限制器"""
+    return AdaptiveRateLimiter(
+        RateLimitConfig(
+            requests_per_second=float(os.getenv("RATE_LIMIT_RPS", 1.0)),
+            burst_size=int(os.getenv("RATE_LIMIT_BURST", 5)),
+            min_delay=float(os.getenv("RATE_LIMIT_MIN_DELAY", 0.5)),
+            max_delay=float(os.getenv("RATE_LIMIT_MAX_DELAY", 10.0)),
+        )
     )
 
 async def main(max_urls: int):
@@ -92,17 +93,16 @@ async def main(max_urls: int):
     
     rate_limiter = get_rate_limiter()
 
-    # 使用更健壮的爬虫管理
+    # 使用更健壯的爬蟲管理
     crawler = None
     try:
         for url_model in pending_urls:
             # 如果爬虫未初始化或需要重启
             if crawler is None:
                 try:
-                    logger.info("正在初始化/重启爬虫...")
+                    logger.info("正在初始化/重啟爬蟲...")
                     crawler = AsyncWebCrawler(
-                        rate_limiter=rate_limiter,
-                        # 添加更稳健的配置
+                        # 添加更穩健的配置
                         browser_config={
                             "headless": True,
                             "args": [
@@ -113,13 +113,14 @@ async def main(max_urls: int):
                                 "--disable-web-security",
                                 "--ignore-certificate-errors",
                                 "--memory-pressure-off",
-                                "--max_old_space_size=4096"
+                                "--max_old_space_size=4096",
                             ]
                         }
                     )
+                    # 套用自定義速率限制器
+                    rate_limiter.apply_to_crawl4ai(crawler)
                     await crawler.__aenter__()
-                    apply_to_crawl4ai(crawler)
-                    logger.info("爬虫初始化成功")
+                    logger.info("爬蟲初始化成功")
                 except Exception as e:
                     logger.error(f"爬虫初始化失败: {e}")
                     break

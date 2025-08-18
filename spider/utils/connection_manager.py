@@ -13,6 +13,7 @@ import logging
 from contextlib import asynccontextmanager
 
 from spider.utils.enhanced_logger import get_spider_logger
+from spider.utils.rate_limiter import RateLimiter, AdaptiveRateLimiter, RateLimitConfig
 
 
 @dataclass
@@ -43,35 +44,6 @@ class ConnectionConfig:
     # 健康檢查
     health_check_interval: float = 300.0  # 5分鐘
     max_failed_health_checks: int = 3
-
-
-class RateLimiter:
-    """令牌桶速率限制器"""
-    
-    def __init__(self, rate: float, burst: int):
-        self.rate = rate  # 每秒令牌數
-        self.burst = burst  # 桶容量
-        self.tokens = float(burst)  # 當前令牌數
-        self.last_update = time.time()
-        self._lock = asyncio.Lock()
-    
-    async def acquire(self):
-        """獲取令牌（阻塞直到有令牌可用）"""
-        async with self._lock:
-            now = time.time()
-            # 添加新令牌
-            elapsed = now - self.last_update
-            self.tokens = min(self.burst, self.tokens + elapsed * self.rate)
-            self.last_update = now
-            
-            if self.tokens >= 1.0:
-                self.tokens -= 1.0
-                return
-            
-            # 需要等待
-            wait_time = (1.0 - self.tokens) / self.rate
-            await asyncio.sleep(wait_time)
-            self.tokens = 0.0
 
 
 class ConnectionHealthMonitor:
@@ -119,17 +91,28 @@ class ConnectionHealthMonitor:
 
 class EnhancedConnectionManager:
     """增強的連接管理器"""
-    
-    def __init__(self, config: Optional[ConnectionConfig] = None):
+
+    def __init__(
+        self,
+        config: Optional[ConnectionConfig] = None,
+        rate_limiter: Optional[RateLimiter] = None,
+    ):
         self.config = config or ConnectionConfig()
         self.logger = get_spider_logger("connection_manager")
-        
+
         self._session: Optional[aiohttp.ClientSession] = None
         self._connector: Optional[aiohttp.TCPConnector] = None
-        self._rate_limiter = RateLimiter(
-            self.config.requests_per_second, 
-            self.config.burst_requests
-        )
+
+        # 如果外部未提供速率限制器，依設定建立預設實例
+        if rate_limiter is None:
+            rl_config = RateLimitConfig(
+                requests_per_second=self.config.requests_per_second,
+                burst_size=self.config.burst_requests,
+                adaptive=False,
+            )
+            rate_limiter = RateLimiter(rl_config)
+
+        self._rate_limiter: RateLimiter = rate_limiter
         self._health_monitor = ConnectionHealthMonitor(self.config)
         self._stats = {
             "requests_total": 0,
@@ -138,7 +121,7 @@ class EnhancedConnectionManager:
             "retries_total": 0,
             "rate_limited": 0,
             "health_checks": 0,
-            "session_recreated": 0
+            "session_recreated": 0,
         }
         
     async def __aenter__(self):
@@ -220,8 +203,9 @@ class EnhancedConnectionManager:
         # 確保會話可用
         await self._recreate_session_if_needed()
         
-        # 速率限制
-        await self._rate_limiter.acquire()
+        # 速率限制：以域名為單位等待
+        domain = urlparse(url).netloc
+        await self._rate_limiter.acquire_async(domain)
         
         # 重試邏輯
         last_exception = None
@@ -239,10 +223,12 @@ class EnhancedConnectionManager:
                     self._stats["requests_success"] += 1
                     content_length = int(response.headers.get('content-length', 0))
                     self.logger.log_request_success(context, response.status, content_length)
+                    self._rate_limiter.report_success(domain)
                     return response
                 elif response.status == 429:  # 速率限制
                     self._stats["rate_limited"] += 1
                     retry_after = response.headers.get('Retry-After')
+                    self._rate_limiter.report_failure(domain, severe=True)
                     if retry_after:
                         try:
                             retry_after = float(retry_after)
@@ -262,6 +248,7 @@ class EnhancedConnectionManager:
                     # 其他HTTP錯誤
                     error_msg = f"HTTP {response.status}"
                     last_exception = aiohttp.ClientError(error_msg)
+                    self._rate_limiter.report_failure(domain)
                     
                     if attempt < self.config.max_retries:
                         delay = self.config.retry_delay * (self.config.retry_backoff ** attempt)
@@ -277,6 +264,7 @@ class EnhancedConnectionManager:
             except (aiohttp.ClientError, asyncio.TimeoutError) as e:
                 last_exception = e
                 self._stats["retries_total"] += 1
+                self._rate_limiter.report_failure(domain)
                 
                 if attempt < self.config.max_retries:
                     delay = self.config.retry_delay * (self.config.retry_backoff ** attempt)
@@ -296,6 +284,7 @@ class EnhancedConnectionManager:
             except Exception as e:
                 self._stats["requests_failed"] += 1
                 self.logger.log_request_error(context, e, None, attempt)
+                self._rate_limiter.report_failure(domain, severe=True)
                 raise
         
         # 如果所有重試都失敗了
@@ -341,8 +330,11 @@ class EnhancedConnectionManager:
 
 
 # 便捷函數
-async def create_connection_manager(config: Optional[ConnectionConfig] = None) -> EnhancedConnectionManager:
+async def create_connection_manager(
+    config: Optional[ConnectionConfig] = None,
+    rate_limiter: Optional[RateLimiter] = None,
+) -> EnhancedConnectionManager:
     """創建連接管理器"""
-    manager = EnhancedConnectionManager(config)
+    manager = EnhancedConnectionManager(config, rate_limiter=rate_limiter)
     await manager._create_session()
     return manager
