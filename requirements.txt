@@ -6,6 +6,7 @@ requests>=2.31.0
 beautifulsoup4>=4.12.2
 defusedxml>=0.7.1
 
+
 # 資料庫
 psycopg2-binary>=2.9.9
 supabase>=2.0.0
