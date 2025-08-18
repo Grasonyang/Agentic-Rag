@@ -29,6 +29,7 @@ from spider.crawlers.robots_handler import (
     fetch_and_parse,
     is_allowed,
     get_crawl_delay,
+    apply_to_crawl4ai,
 )
 
 # 載入 .env 配置
@@ -81,7 +82,7 @@ async def main(max_urls: int):
     # 先下載並解析各網域的 robots.txt 以利後續判斷
     domains = {u.domain for u in pending_urls}
     for domain in domains:
-        fetch_and_parse(domain)
+        await fetch_and_parse(domain)
 
     # 2. 逐一爬取並處理
     processed_count = 0
@@ -117,19 +118,20 @@ async def main(max_urls: int):
                         }
                     )
                     await crawler.__aenter__()
+                    apply_to_crawl4ai(crawler)
                     logger.info("爬虫初始化成功")
                 except Exception as e:
                     logger.error(f"爬虫初始化失败: {e}")
                     break
 
             # 先確認 robots.txt 是否允許
-            if not is_allowed(url_model.url):
+            if not await is_allowed(url_model.url):
                 logger.info(f"URL 被 robots.txt 禁止: {url_model.url}")
                 db_ops.update_crawl_status(url_model.id, CrawlStatus.SKIPPED)
                 continue
 
             # 若有設定 crawl-delay，於此等待
-            delay = get_crawl_delay(url_model.domain)
+            delay = await get_crawl_delay(url_model.domain)
             if delay:
                 logger.info(f"遵守 crawl-delay {delay} 秒")
                 await asyncio.sleep(delay)
@@ -202,7 +204,7 @@ async def main(max_urls: int):
             processed_count += 1
 
             # 根據 crawl-delay 或預設 1 秒延遲
-            delay = get_crawl_delay(url_model.domain) or 1
+            delay = await get_crawl_delay(url_model.domain) or 1
             await asyncio.sleep(delay)
 
     finally:
