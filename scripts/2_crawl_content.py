@@ -31,7 +31,14 @@ async def main(batch_size: int) -> None:
     async with EnhancedDatabaseManager() as db_manager:
         scheduler = URLScheduler(db_manager)
         cm = EnhancedConnectionManager(rate_limiter=AdaptiveRateLimiter())
-        crawler = ProgressiveCrawler(scheduler, cm, RetryManager(), batch_size=batch_size)
+        # 以 batch_size 同時設定批次大小與並行數量
+        crawler = ProgressiveCrawler(
+            scheduler,
+            cm,
+            RetryManager(),
+            batch_size=batch_size,
+            concurrency=batch_size,
+        )
         processed = await crawler.crawl_batch()
         logger.info(f"本次處理 {processed} 個 URL")
         logger.log_statistics()
