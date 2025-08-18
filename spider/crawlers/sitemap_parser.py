@@ -3,8 +3,12 @@ import urllib.robotparser
 from defusedxml import ElementTree as ET
 from crawl4ai import AsyncWebCrawler
 from spider.utils.connection_manager import EnhancedConnectionManager
+from spider.utils.enhanced_logger import get_spider_logger
 from lxml import etree
 from .url_scheduler import URLScheduler
+
+# 建立模組專用的記錄器
+logger = get_spider_logger("sitemap_parser")
 
 class SitemapParser:
     def __init__(self, connection_manager: EnhancedConnectionManager, user_agent="*"):
@@ -14,7 +18,8 @@ class SitemapParser:
     def get_sitemaps_from_robots(self, domain: str) -> list[str]:
         """解析 robots.txt 以取得 sitemap URLs。"""
         robots_url = urljoin(domain, "robots.txt")
-        print(f"Processing robots.txt for domain: {domain}")
+        # 記錄解析 robots.txt 的網域
+        logger.info(f"處理 {domain} 的 robots.txt")
         rp = urllib.robotparser.RobotFileParser()
         rp.set_url(robots_url)
         try:
@@ -22,8 +27,9 @@ class SitemapParser:
             sitemaps = rp.sitemaps
             if sitemaps:
                 return sitemaps
-        except Exception as e:
-            print(f"Error reading robots.txt: {e}")
+        except Exception as e:  # noqa: BLE001
+            # 紀錄讀取 robots.txt 發生的錯誤
+            logger.error(f"讀取 robots.txt 發生錯誤: {e}")
         return []
 
     async def parse_sitemap(self, sitemap_url: str) -> tuple[list[str], list[str]]:
@@ -35,7 +41,10 @@ class SitemapParser:
                 result = await crawler.arun(sitemap_url)
 
                 if not result.success:
-                    print(f"Error fetching sitemap {sitemap_url}: {result.error_message}")
+                    # 取得 sitemap 失敗時記錄錯誤
+                    logger.error(
+                        f"無法取得 sitemap {sitemap_url}: {result.error_message}"
+                    )
                     return urls, nested_sitemaps
 
                 # 使用 lxml 解析 XML 內容
@@ -49,8 +58,9 @@ class SitemapParser:
                         nested_sitemaps.append(url)
                     else:
                         urls.append(url)
-        except Exception as e:
-            print(f"Error fetching sitemap {sitemap_url}: {e}")
+        except Exception as e:  # noqa: BLE001
+            # 抓取 sitemap 時若發生例外，記錄錯誤
+            logger.error(f"抓取 sitemap {sitemap_url} 時發生錯誤: {e}")
 
         return urls, nested_sitemaps
 
@@ -70,12 +80,14 @@ class SitemapParser:
                     if result.success:
                         content = result.html.lower()
                         if '<urlset' in content or '<sitemapindex' in content:
-                            print(f"Success checking sitemap content for {url}")
+                            # 成功確認為 sitemap 時輸出除錯資訊
+                            logger.debug(f"成功驗證 {url} 為 sitemap")
                             return True
 
             return False
-        except Exception as e:
-            print(f"Error checking content for {url}: {e}")
+        except Exception as e:  # noqa: BLE001
+            # 內容檢查發生錯誤時記錄
+            logger.error(f"檢查 {url} 內容時發生錯誤: {e}")
             return False
 
     async def discover_urls_from_sitemaps(self, domain: str):
