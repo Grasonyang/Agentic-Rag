@@ -1,9 +1,11 @@
-"""robots.txt 解析與快取處理"""
+"""robots.txt 非同步解析與快取處理"""
 
-import requests
 import urllib.robotparser
 from urllib.parse import urljoin, urlparse
 from typing import Dict, Optional
+import types
+
+from spider.utils.connection_manager import EnhancedConnectionManager
 
 # 全域快取，避免重複下載 robots.txt
 _robots_cache: Dict[str, urllib.robotparser.RobotFileParser] = {}
@@ -18,41 +20,82 @@ def _normalize_domain(domain: str) -> tuple[str, str]:
     base_url = f"{parsed.scheme}://{parsed.netloc}/"
     return parsed.netloc, base_url
 
-def fetch_and_parse(domain: str) -> None:
-    """下載並解析指定網域的 robots.txt"""
+async def fetch_and_parse(domain: str, connection_manager: Optional[EnhancedConnectionManager] = None) -> None:
+    """非同步下載並解析指定網域的 robots.txt"""
     netloc, base_url = _normalize_domain(domain)
     if netloc in _robots_cache:
         return
 
     robots_url = urljoin(base_url, "robots.txt")
     rp = urllib.robotparser.RobotFileParser()
+
+    close_manager = False
+    cm = connection_manager
+    if cm is None:
+        cm = EnhancedConnectionManager()
+        close_manager = True
+
     try:
-        response = requests.get(robots_url, timeout=10)
-        if response.status_code == 200:
-            rp.parse(response.text.splitlines())
-            delay = rp.crawl_delay(USER_AGENT)
-            if delay is not None:
-                _crawl_delay_cache[netloc] = delay
+        if close_manager:
+            async with cm:
+                response = await cm.get(robots_url)
+                if response.status == 200:
+                    text = await response.text()
+                    rp.parse(text.splitlines())
+                    delay = rp.crawl_delay(USER_AGENT)
+                    if delay is not None:
+                        _crawl_delay_cache[netloc] = delay
+                else:
+                    rp.parse([])
         else:
-            rp.parse([])
+            response = await cm.get(robots_url)
+            if response.status == 200:
+                text = await response.text()
+                rp.parse(text.splitlines())
+                delay = rp.crawl_delay(USER_AGENT)
+                if delay is not None:
+                    _crawl_delay_cache[netloc] = delay
+            else:
+                rp.parse([])
     except Exception:
         rp.parse([])
+    finally:
+        if close_manager:
+            await cm.close()
+
     _robots_cache[netloc] = rp
 
-def is_allowed(url: str) -> bool:
+async def is_allowed(url: str, connection_manager: Optional[EnhancedConnectionManager] = None) -> bool:
     """檢查 URL 是否允許被爬取"""
     parsed = urlparse(url)
     netloc = parsed.netloc
     if netloc not in _robots_cache:
-        fetch_and_parse(netloc)
+        await fetch_and_parse(netloc, connection_manager)
     rp = _robots_cache.get(netloc)
     if not rp:
         return True
     return rp.can_fetch(USER_AGENT, url)
 
-def get_crawl_delay(domain: str) -> Optional[float]:
+async def get_crawl_delay(domain: str, connection_manager: Optional[EnhancedConnectionManager] = None) -> Optional[float]:
     """取得指定網域的 crawl-delay 秒數"""
     netloc, _ = _normalize_domain(domain)
     if netloc not in _robots_cache:
-        fetch_and_parse(netloc)
+        await fetch_and_parse(netloc, connection_manager)
     return _crawl_delay_cache.get(netloc)
+
+def apply_to_crawl4ai(session, connection_manager: Optional[EnhancedConnectionManager] = None):
+    """將 robots.txt 檢查整合至 crawl4ai 的 hook"""
+
+    async def _before_request(url: str, request_kwargs: dict):
+        cm = connection_manager or getattr(session, "connection_manager", None)
+        if not await is_allowed(url, cm):
+            raise PermissionError(f"被 robots.txt 禁止: {url}")
+
+    if hasattr(session, "crawler_strategy") and hasattr(session.crawler_strategy, "set_hook"):
+        session.crawler_strategy.set_hook("before_request", _before_request)
+        session.robots_handler = types.SimpleNamespace(
+            get_crawl_delay=lambda domain: get_crawl_delay(domain, connection_manager),
+            is_allowed=lambda url: is_allowed(url, connection_manager),
+        )
+
+    return session
