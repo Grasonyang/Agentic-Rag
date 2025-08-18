@@ -94,8 +94,9 @@ class DatabaseOperations:
     def get_pending_urls(self, limit: Optional[int] = 100) -> List[DiscoveredURLModel]:
         """取得尚未處理的 URL"""
         sql = (
+            # 依優先級與最後爬取時間排序，避免重複載入全量
             "SELECT * FROM discovered_urls WHERE crawl_status IS NULL OR crawl_status=%s "
-            "ORDER BY COALESCE(last_crawl_at, created_at) LIMIT %s"
+            "ORDER BY priority DESC NULLS LAST, COALESCE(last_crawl_at, created_at) LIMIT %s"
         )
         rows = self.client.execute_query(sql, (CrawlStatus.PENDING.value, limit)) or []
         return [DiscoveredURLModel.from_dict(dict(r)) for r in rows]
