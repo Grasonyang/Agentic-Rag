@@ -4,7 +4,8 @@
 可依需求替換成 Redis 等分散式儲存，以支援多進程或多機環境。
 """
 
-from typing import Iterable, List
+from typing import Iterable, List, Any
+from datetime import datetime
 from database.models import DiscoveredURLModel, CrawlStatus
 from spider.utils.database_manager import EnhancedDatabaseManager
 
@@ -16,22 +17,53 @@ class URLScheduler:
         # 資料庫管理器
         self.db_manager = db_manager
 
-    async def enqueue_urls(self, urls: Iterable[str], priority: float | None = None) -> int:
-        """將多個 URL 加入佇列
+    async def enqueue_urls(self, urls: Iterable[Any], batch_size: int = 1000) -> int:
+        """將多個 URL 以批次寫入佇列
 
         Args:
-            urls: 要加入的 URL 迭代器
-            priority: 可選的優先級
+            urls: URL 字串或包含 `url`、`priority`、`lastmod` 的資料結構
+            batch_size: 單次批量寫入的數量
         Returns:
             成功加入的 URL 數量
         """
-        models: List[DiscoveredURLModel] = []
-        for url in urls:
-            model = DiscoveredURLModel(url=url, priority=priority)
-            models.append(model)
-        if not models:
-            return 0
-        return await self.db_manager.bulk_create_discovered_urls(models)
+        batch: List[DiscoveredURLModel] = []
+        total = 0
+
+        for item in urls:
+            # 允許直接傳入字串或 dict/tuple
+            if isinstance(item, str):
+                url = item
+                priority = None
+                lastmod = None
+            elif isinstance(item, dict):
+                url = item.get("url", "")
+                priority = item.get("priority")
+                lastmod = item.get("lastmod")
+            else:
+                url = item[0]
+                priority = item[1] if len(item) > 1 else None
+                lastmod = item[2] if len(item) > 2 else None
+
+            if isinstance(lastmod, str):
+                try:
+                    lastmod = datetime.fromisoformat(lastmod.replace('Z', '+00:00'))
+                except ValueError:
+                    lastmod = None
+
+            model = DiscoveredURLModel(
+                url=url, priority=priority, lastmod=lastmod
+            )
+            batch.append(model)
+
+            # 批量寫入資料庫
+            if len(batch) >= batch_size:
+                total += await self.db_manager.bulk_create_discovered_urls(batch)
+                batch.clear()
+
+        if batch:
+            total += await self.db_manager.bulk_create_discovered_urls(batch)
+
+        return total
 
     async def dequeue_batch(self, batch_size: int) -> List[DiscoveredURLModel]:
         """取出一批待處理的 URL
