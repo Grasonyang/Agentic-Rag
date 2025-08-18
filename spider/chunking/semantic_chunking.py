@@ -20,6 +20,7 @@ class SemanticChunkingConfig(ChunkingConfig):
     min_similarity_sentences: int = 3
     use_embedding_model: bool = True
     embedding_model: str = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
+    embedding_batch_size: int = 64
     
 class SemanticChunking(BaseChunker):
     """
@@ -151,9 +152,15 @@ class SemanticChunking(BaseChunker):
             List[List[int]]: 句子索引的分組
         """
         try:
-            # 計算句子嵌入
-            embeddings = self.embedding_model.encode(sentences)
-            
+            # 分批計算句子嵌入
+            batch = getattr(self.config, "embedding_batch_size", 64)
+            embeddings_list = []
+            for i in range(0, len(sentences), batch):
+                # 逐批編碼句子
+                batch_emb = self.embedding_model.encode(sentences[i:i + batch])
+                embeddings_list.append(batch_emb)
+            embeddings = np.vstack(embeddings_list)
+
             # 計算相似度矩陣
             similarity_matrix = np.dot(embeddings, embeddings.T)
             
