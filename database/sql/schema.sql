@@ -76,7 +76,7 @@ CREATE TABLE IF NOT EXISTS discovered_urls (
     url TEXT UNIQUE NOT NULL,
     domain TEXT NOT NULL,
     source_sitemap TEXT,                  -- 來源sitemap URL
-    priority DECIMAL(2,1) CHECK (priority >= 0.0 AND priority <= 1.0),
+    priority NUMERIC(3,2) CHECK (priority >= 0.00 AND priority <= 1.00),
     changefreq changefreq_enum,
     lastmod TIMESTAMP WITH TIME ZONE,
     crawl_status crawl_status_enum DEFAULT 'pending',
@@ -137,6 +137,8 @@ CREATE TABLE IF NOT EXISTS sitemaps (
 CREATE INDEX IF NOT EXISTS idx_discovered_urls_url ON discovered_urls(url);
 CREATE INDEX IF NOT EXISTS idx_discovered_urls_domain ON discovered_urls(domain);
 CREATE INDEX IF NOT EXISTS idx_discovered_urls_status ON discovered_urls(crawl_status);
+-- 以 domain 與 crawl_status 建立複合索引
+CREATE INDEX IF NOT EXISTS idx_discovered_urls_domain_status ON discovered_urls(domain, crawl_status);
 CREATE INDEX IF NOT EXISTS idx_discovered_urls_created_at ON discovered_urls(created_at);
 CREATE INDEX IF NOT EXISTS idx_discovered_urls_source ON discovered_urls(source_sitemap);
 
@@ -204,11 +206,30 @@ CREATE TRIGGER trigger_sitemaps_updated_at
 -- 權限設定和 RLS 政策
 -- =============================================
 
--- 為所有角色授予必要權限
-GRANT USAGE ON SCHEMA public TO anon, authenticated, service_role;
-GRANT ALL ON ALL TABLES IN SCHEMA public TO anon, authenticated, service_role;
-GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO anon, authenticated, service_role;
-GRANT ALL ON ALL FUNCTIONS IN SCHEMA public TO anon, authenticated, service_role;
+-- 為所有角色授予必要權限（先檢查角色是否存在）
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'anon') THEN
+        GRANT USAGE ON SCHEMA public TO anon;
+        GRANT ALL ON ALL TABLES IN SCHEMA public TO anon;
+        GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO anon;
+        GRANT ALL ON ALL FUNCTIONS IN SCHEMA public TO anon;
+    END IF;
+
+    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'authenticated') THEN
+        GRANT USAGE ON SCHEMA public TO authenticated;
+        GRANT ALL ON ALL TABLES IN SCHEMA public TO authenticated;
+        GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO authenticated;
+        GRANT ALL ON ALL FUNCTIONS IN SCHEMA public TO authenticated;
+    END IF;
+
+    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'service_role') THEN
+        GRANT USAGE ON SCHEMA public TO service_role;
+        GRANT ALL ON ALL TABLES IN SCHEMA public TO service_role;
+        GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO service_role;
+        GRANT ALL ON ALL FUNCTIONS IN SCHEMA public TO service_role;
+    END IF;
+END $$;
 
 -- =============================================
 -- RLS (列級別安全性) 政策設定
