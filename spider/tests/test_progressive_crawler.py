@@ -2,16 +2,21 @@
 
 # 註解使用繁體中文
 
-import types
 import sys
-import datetime
+import types
 from dataclasses import dataclass
+from datetime import datetime
 
 import pytest
 
 # 建立假的模組以避免匯入實際依賴
+scheduler_module = types.ModuleType("spider.crawlers.url_scheduler")
 connection_module = types.ModuleType("spider.utils.connection_manager")
 database_module = types.ModuleType("spider.utils.database_manager")
+
+
+class URLScheduler:  # noqa: D401 - 測試替身
+    """假的 URL 排程器占位"""
 
 
 class EnhancedConnectionManager:  # noqa: D401 - 測試替身
@@ -22,9 +27,11 @@ class EnhancedDatabaseManager:  # noqa: D401 - 測試替身
     """假的資料庫管理器占位"""
 
 
+scheduler_module.URLScheduler = URLScheduler
 connection_module.EnhancedConnectionManager = EnhancedConnectionManager
 database_module.EnhancedDatabaseManager = EnhancedDatabaseManager
 
+sys.modules["spider.crawlers.url_scheduler"] = scheduler_module
 sys.modules["spider.utils.connection_manager"] = connection_module
 sys.modules["spider.utils.database_manager"] = database_module
 
@@ -38,7 +45,7 @@ class FakeURL:
 
     id: str
     url: str
-    last_crawl_at: datetime.datetime | None = None
+    last_crawl_at: datetime | None = None
     crawl_attempts: int = 0
 
 
@@ -51,7 +58,7 @@ class FakeScheduler:
 
     async def dequeue_batch(self, batch_size):
         pending = [u for u in self.urls if self.statuses[u.id] == CrawlStatus.PENDING]
-        pending.sort(key=lambda u: u.last_crawl_at or datetime.datetime.min)
+        pending.sort(key=lambda u: u.last_crawl_at or datetime.min)
         return pending[:batch_size]
 
     async def update_status(self, uid, status, error_message=None):  # noqa: ANN001, D401
@@ -97,8 +104,8 @@ async def test_crawl_batch_order_and_status() -> None:
     """確認依 `last_crawl_at` 順序處理並更新狀態"""
 
     urls = [
-        FakeURL("1", "http://example.com/1", datetime.datetime(2020, 1, 2)),
-        FakeURL("2", "http://example.com/2", datetime.datetime(2020, 1, 1)),
+        FakeURL("1", "http://example.com/1", datetime(2020, 1, 2)),
+        FakeURL("2", "http://example.com/2", datetime(2020, 1, 1)),
     ]
     scheduler = FakeScheduler(urls)
     conn = FakeConnectionManager()
