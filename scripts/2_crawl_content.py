@@ -5,7 +5,6 @@
 
 import argparse
 import asyncio
-import logging
 import os
 import sys
 
@@ -19,17 +18,12 @@ from spider.utils.connection_manager import EnhancedConnectionManager
 from spider.utils.database_manager import EnhancedDatabaseManager
 from spider.utils.rate_limiter import AdaptiveRateLimiter
 from spider.utils.retry_manager import RetryManager
+from scripts.utils import get_script_logger
 
 # 載入環境設定
 load_config()
 
-# 設定日誌格式
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(levelname)s - [%(name)s] - %(message)s",
-    stream=sys.stdout,
-)
-logger = logging.getLogger(__name__)
+logger = get_script_logger("crawl_content")
 
 
 async def main(batch_size: int) -> None:
