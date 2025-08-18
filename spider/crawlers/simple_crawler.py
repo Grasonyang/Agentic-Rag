@@ -3,12 +3,14 @@
 範例使用:
     import asyncio
     from spider.crawlers.simple_crawler import SimpleWebCrawler
+    from spider.utils.enhanced_logger import get_spider_logger
 
     async def demo():
+        logger = get_spider_logger("demo")
         crawler = SimpleWebCrawler()
         result = await crawler.crawl_single("https://example.com")
         if result["success"]:
-            print(result["title"], result.get("article_id"))
+            logger.info(f"{result['title']} {result.get('article_id')}")
 
     asyncio.run(demo())
 
@@ -25,6 +27,9 @@ from spider.utils.rate_limiter import AdaptiveRateLimiter
 from spider.crawlers.robots_handler import apply_to_crawl4ai
 from database.models import ArticleModel
 from .base_crawler import BaseCrawler
+from spider.utils.enhanced_logger import get_spider_logger
+
+logger = get_spider_logger("simple_crawler")  # 取得爬蟲日誌記錄器
 
 
 class SimpleWebCrawler(BaseCrawler):

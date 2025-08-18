@@ -16,9 +16,9 @@ import psycopg2.extras
 from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
 from pathlib import Path
 from typing import Dict, List, Any, Optional, Tuple
-import logging
+from spider.utils.enhanced_logger import get_spider_logger
 
-logger = logging.getLogger(__name__)
+logger = get_spider_logger("postgres_client")  # 取得資料庫日誌記錄器
 
 
 class PostgreSQLClient:
@@ -406,14 +406,14 @@ def test_connection():
     """測試資料庫連接"""
     try:
         with PostgreSQLClient() as client:
-            print("✅ 連接成功!")
+            logger.info("✅ 連接成功!")
             
             # 測試基本查詢
             version = client.get_database_version()
             user = client.get_current_user()
             
-            print(f"📊 資料庫版本: {version}")
-            print(f"👤 當前用戶: {user}")
+            logger.info(f"📊 資料庫版本: {version}")
+            logger.info(f"👤 當前用戶: {user}")
             
             # 測試表格檢查
             tables = ["discovered_urls", "articles", "article_chunks", "sitemaps"]
@@ -421,10 +421,12 @@ def test_connection():
                 exists = client.table_exists(table)
                 count = client.get_table_count(table) if exists else 0
                 status = "✅" if exists else "❌"
-                print(f"{status} 表格 {table}: {'存在' if exists else '不存在'} ({count} 筆記錄)")
+                logger.info(
+                    f"{status} 表格 {table}: {'存在' if exists else '不存在'} ({count} 筆記錄)"
+                )
             
     except Exception as e:
-        print(f"❌ 連接測試失敗: {e}")
+        logger.error(f"❌ 連接測試失敗: {e}")
 
 
 if __name__ == "__main__":

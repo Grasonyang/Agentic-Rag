@@ -41,6 +41,9 @@ agentic_rag/
 | `make search QUERY="關鍵問題"` | 進行語義搜尋 |
 | `make migrate-supabase` | 將 PostgreSQL 資料遷移至 Supabase |
 
+## 🪵 日誌
+執行上述指令時會在 `logs/` 目錄生成詳細日誌，可於此檢視執行狀態與錯誤資訊。
+
 ## 🗺️ 漸進式抓取策略
 1. 先讀取 `robots.txt` 決定允許抓取的路徑。
 2. 解析 sitemap，將新發現的頁面 URL 寫入資料庫。
