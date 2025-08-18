@@ -25,8 +25,8 @@ agentic_rag/
    DB_HOST=localhost
    DB_PORT=5432
    DB_USER=postgres
-   DB_PASSWORD=secret
-   DB_NAME=rag
+   DB_PASSWORD=你的資料庫密碼
+   DB_NAME=postgres
    EMBEDDING_MODEL=BAAI/bge-large-zh-v1.5
    ```
 
