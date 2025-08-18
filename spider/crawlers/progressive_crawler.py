@@ -90,38 +90,44 @@ class ProgressiveCrawler:
 
     async def crawl_batch(self) -> int:
         """抓取一批待處理 URL"""
-        urls = await self.scheduler.dequeue_batch(self.batch_size)
-        if not urls:
-            return 0
-
-        # 依網域分組並預先處理 robots.txt
-        domain_groups: dict[str, list] = {}
-        for u in urls:
-            domain = getattr(u, "domain", urlparse(u.url).netloc)
-            domain_groups.setdefault(domain, []).append(u)
-
-        for domain in domain_groups:
-            try:
-                # 下載並解析該網域的 robots.txt
-                await fetch_and_parse(domain, self.connection_manager)
-                crawl_delay = await get_crawl_delay(domain, self.connection_manager)
-                if crawl_delay:
-                    rl = getattr(self.connection_manager, "_rate_limiter", None)
-                    if rl:
-                        rl.config.min_delay = max(rl.config.min_delay, float(crawl_delay))
-            except Exception as e:  # noqa: BLE001
-                # robots 取得失敗時記錄警告但不中斷流程
-                self.logger.warning(f"無法下載 {domain} 的 robots.txt: {e}")
 
         sem = asyncio.Semaphore(self.concurrency)
+        tasks: set[asyncio.Task] = set()
+        processed = 0
+        visited_domains: set[str] = set()
 
         async def worker(u):
             async with sem:
                 await self._process_url(u)
 
-        await asyncio.gather(*(worker(u) for u in urls))
+        async for u in self.scheduler.dequeue_stream(self.batch_size):
+            domain = getattr(u, "domain", urlparse(u.url).netloc)
+            if domain not in visited_domains:
+                try:
+                    # 下載並解析該網域的 robots.txt
+                    await fetch_and_parse(domain, self.connection_manager)
+                    crawl_delay = await get_crawl_delay(domain, self.connection_manager)
+                    if crawl_delay:
+                        rl = getattr(self.connection_manager, "_rate_limiter", None)
+                        if rl:
+                            rl.config.min_delay = max(rl.config.min_delay, float(crawl_delay))
+                except Exception as e:  # noqa: BLE001
+                    # robots 取得失敗時記錄警告但不中斷流程
+                    self.logger.warning(f"無法下載 {domain} 的 robots.txt: {e}")
+                visited_domains.add(domain)
 
-        return len(urls)
+            task = asyncio.create_task(worker(u))
+            tasks.add(task)
+            task.add_done_callback(tasks.discard)
+            processed += 1
+
+            if len(tasks) >= self.concurrency:
+                await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
+
+        if tasks:
+            await asyncio.gather(*tasks)
+
+        return processed
 
     async def run(self, interval: float = 5.0) -> None:
         """連續執行爬蟲，沒有 URL 時等待一段時間"""
