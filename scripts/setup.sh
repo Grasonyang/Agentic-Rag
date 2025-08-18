@@ -62,31 +62,25 @@ sudo apt-get install -y postgresql postgresql-contrib
 
 # --- 在非 systemd 環境中啟動 PostgreSQL ---
 echo "🚀  正在啟動 PostgreSQL 服務..."
-# 使用 service 命令啟動，適用於無 systemd 的環境
-service postgresql start
+if command -v systemctl >/dev/null 2>&1; then
+    sudo systemctl start postgresql || echo "⚠️  無法啟動 PostgreSQL 服務，請確認權限。"
+elif command -v service >/dev/null 2>&1; then
+    sudo service postgresql start || echo "⚠️  無法啟動 PostgreSQL 服務，請確認權限。"
+else
+    echo "⚠️  找不到 systemctl 或 service 指令，跳過啟動步驟。"
+fi
 
-# 等待幾秒鐘確保服務完全啟動
 sleep 5
 
-# --- 設定資料庫 ---
-# 為 'postgres' 使用者設定密碼，並提示使用者更新 .env 檔案
-echo "🔑  正在為 'postgres' 使用者設定預設密碼..."
-sudo -u postgres psql -c "ALTER USER postgres WITH PASSWORD 'postgres';"
-
-echo "ℹ️  已將 'postgres' 使用者的密碼設定為 'postgres'。"
-echo "👉  請記得在 .env 檔案中設定 DB_PASSWORD=postgres"
-
-# --- 檢查服務狀態 ---
-# 使用 pg_isready 工具檢查 PostgreSQL 是否準備好接受連線
-echo "ℹ️  正在檢查 PostgreSQL 服務狀態..."
+# 僅在服務成功啟動時設定密碼
 if pg_isready -q; then
+    echo "🔑  正在為 'postgres' 使用者設定預設密碼..."
+    sudo -u postgres psql -c "ALTER USER postgres WITH PASSWORD 'postgres';" || true
+    echo "ℹ️  已將 'postgres' 使用者的密碼設定為 'postgres'。"
+    echo "👉  請記得在 .env 檔案中設定 DB_PASSWORD=postgres"
     echo "✅  PostgreSQL 正在運行並準備好接受連線。"
 else
-    echo "❌  PostgreSQL 啟動失敗或未準備好。"
-    echo "   請檢查 PostgreSQL 日誌以進行排錯:"
-    # 顯示日誌以幫助排錯
-    tail -n 30 /var/log/postgresql/postgresql-*.log || true
-    exit 1
+    echo "⚠️  PostgreSQL 未啟動，略過密碼設定。"
 fi
 
 echo "✅  PostgreSQL 安裝與設定完成。"

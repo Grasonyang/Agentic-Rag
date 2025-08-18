@@ -1,8 +1,7 @@
 """robots.txt 非同步解析與快取處理"""
 
-import urllib.robotparser
 from urllib.parse import urljoin, urlparse
-from typing import Dict, Optional
+from typing import Optional
 import types
 
 from spider.utils.connection_manager import EnhancedConnectionManager
@@ -12,8 +11,9 @@ from spider.utils.enhanced_logger import get_spider_logger
 logger = get_spider_logger("robots_handler")
 
 # 全域快取，避免重複下載 robots.txt
-_robots_cache: Dict[str, urllib.robotparser.RobotFileParser] = {}
-_crawl_delay_cache: Dict[str, float] = {}
+_robots_cache: dict[str, dict[str, list[str]]] = {}
+_crawl_delay_cache: dict[str, float] = {}
+_sitemaps_cache: dict[str, list[str]] = {}
 
 # 預設使用的 User-Agent
 USER_AGENT = "*"
@@ -24,14 +24,13 @@ def _normalize_domain(domain: str) -> tuple[str, str]:
     base_url = f"{parsed.scheme}://{parsed.netloc}/"
     return parsed.netloc, base_url
 
-async def fetch_and_parse(domain: str, connection_manager: Optional[EnhancedConnectionManager] = None) -> None:
+async def fetch_and_parse(domain: str, connection_manager: Optional[EnhancedConnectionManager] = None) -> list[str]:
     """非同步下載並解析指定網域的 robots.txt"""
     netloc, base_url = _normalize_domain(domain)
     if netloc in _robots_cache:
-        return
+        return _sitemaps_cache.get(netloc, [])
 
     robots_url = urljoin(base_url, "robots.txt")
-    rp = urllib.robotparser.RobotFileParser()
 
     close_manager = False
     cm = connection_manager
@@ -39,47 +38,65 @@ async def fetch_and_parse(domain: str, connection_manager: Optional[EnhancedConn
         cm = EnhancedConnectionManager()
         close_manager = True
 
+    text = ""
     try:
         if close_manager:
             async with cm:
                 response = await cm.get(robots_url)
                 if response.status == 200:
                     text = await response.text()
-                    rp.parse(text.splitlines())
-                    delay = rp.crawl_delay(USER_AGENT)
-                    if delay is not None:
-                        _crawl_delay_cache[netloc] = delay
-                    # 成功取得 robots.txt 時輸出除錯訊息
                     logger.debug(f"成功取得 {robots_url}")
                 else:
-                    # 取得 robots.txt 失敗時以警告紀錄
-                    logger.warning(
-                        f"無法取得 {robots_url}，狀態碼 {response.status}"
-                    )
-                    rp.parse([])
+                    logger.warning(f"無法取得 {robots_url}，狀態碼 {response.status}")
         else:
             response = await cm.get(robots_url)
             if response.status == 200:
                 text = await response.text()
-                rp.parse(text.splitlines())
-                delay = rp.crawl_delay(USER_AGENT)
-                if delay is not None:
-                    _crawl_delay_cache[netloc] = delay
                 logger.debug(f"成功取得 {robots_url}")
             else:
-                logger.warning(
-                    f"無法取得 {robots_url}，狀態碼 {response.status}"
-                )
-                rp.parse([])
+                logger.warning(f"無法取得 {robots_url}，狀態碼 {response.status}")
     except Exception as e:  # noqa: BLE001
-        # 捕捉未知例外並記錄為警告
         logger.warning(f"下載 {robots_url} 時發生例外: {e}")
-        rp.parse([])
     finally:
         if close_manager:
             await cm.close()
 
-    _robots_cache[netloc] = rp
+    allows: list[str] = []
+    disallows: list[str] = []
+    crawl_delay: Optional[float] = None
+    sitemaps: list[str] = []
+    current_agent: Optional[str] = None
+
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if ":" not in line:
+            continue
+        key, value = [x.strip() for x in line.split(":", 1)]
+        key_lower = key.lower()
+        if key_lower == "user-agent":
+            current_agent = value
+        elif key_lower == "disallow" and (current_agent in (USER_AGENT, "*")):
+            if value:
+                disallows.append(value)
+        elif key_lower == "allow" and (current_agent in (USER_AGENT, "*")):
+            if value:
+                allows.append(value)
+        elif key_lower == "crawl-delay" and (current_agent in (USER_AGENT, "*")):
+            try:
+                crawl_delay = float(value)
+            except ValueError:
+                pass
+        elif key_lower == "sitemap":
+            sitemaps.append(value)
+
+    _robots_cache[netloc] = {"allows": allows, "disallows": disallows}
+    if crawl_delay is not None:
+        _crawl_delay_cache[netloc] = crawl_delay
+    _sitemaps_cache[netloc] = sitemaps
+
+    return sitemaps
 
 async def is_allowed(url: str, connection_manager: Optional[EnhancedConnectionManager] = None) -> bool:
     """檢查 URL 是否允許被爬取"""
@@ -87,12 +104,24 @@ async def is_allowed(url: str, connection_manager: Optional[EnhancedConnectionMa
     netloc = parsed.netloc
     if netloc not in _robots_cache:
         await fetch_and_parse(netloc, connection_manager)
-    rp = _robots_cache.get(netloc)
-    if not rp:
+    rules = _robots_cache.get(netloc)
+    if not rules:
         return True
-    allowed = rp.can_fetch(USER_AGENT, url)
+
+    path = parsed.path or "/"
+    matched = ""
+    allowed = True
+
+    for rule in rules.get("disallows", []):
+        if path.startswith(rule) and len(rule) > len(matched):
+            matched = rule
+            allowed = False
+    for rule in rules.get("allows", []):
+        if path.startswith(rule) and len(rule) >= len(matched):
+            matched = rule
+            allowed = True
+
     if not allowed:
-        # 不允許時記錄資訊
         logger.info(f"URL 被 robots.txt 禁止: {url}")
     return allowed
 
@@ -100,8 +129,15 @@ async def get_crawl_delay(domain: str, connection_manager: Optional[EnhancedConn
     """取得指定網域的 crawl-delay 秒數"""
     netloc, _ = _normalize_domain(domain)
     if netloc not in _robots_cache:
-        await fetch_and_parse(netloc, connection_manager)
+        await fetch_and_parse(domain, connection_manager)
     return _crawl_delay_cache.get(netloc)
+
+async def get_sitemaps(domain: str, connection_manager: Optional[EnhancedConnectionManager] = None) -> list[str]:
+    """取得指定網域在 robots.txt 中宣告的 sitemap"""
+    netloc, _ = _normalize_domain(domain)
+    if netloc not in _robots_cache:
+        return await fetch_and_parse(domain, connection_manager)
+    return _sitemaps_cache.get(netloc, [])
 
 def apply_to_crawl4ai(session, connection_manager: Optional[EnhancedConnectionManager] = None):
     """將 robots.txt 檢查整合至 crawl4ai 的 hook"""
@@ -116,6 +152,7 @@ def apply_to_crawl4ai(session, connection_manager: Optional[EnhancedConnectionMa
         session.robots_handler = types.SimpleNamespace(
             get_crawl_delay=lambda domain: get_crawl_delay(domain, connection_manager),
             is_allowed=lambda url: is_allowed(url, connection_manager),
+            get_sitemaps=lambda domain: get_sitemaps(domain, connection_manager),
         )
 
     return session

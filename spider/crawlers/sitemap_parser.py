@@ -1,11 +1,9 @@
 from urllib.parse import urljoin, urlparse
-import urllib.robotparser
-import io
-from datetime import datetime
+from lxml import etree
 from spider.utils.connection_manager import EnhancedConnectionManager
 from spider.utils.enhanced_logger import get_spider_logger
-from lxml import etree
 from .url_scheduler import URLScheduler
+from . import robots_handler
 
 # 建立模組專用的記錄器
 logger = get_spider_logger("sitemap_parser")
@@ -15,22 +13,13 @@ class SitemapParser:
         self.connection_manager = connection_manager
         self.user_agent = user_agent
 
-    def get_sitemaps_from_robots(self, domain: str) -> list[str]:
-        """解析 robots.txt 以取得 sitemap URLs。"""
-        robots_url = urljoin(domain, "robots.txt")
-        # 記錄解析 robots.txt 的網域
-        logger.info(f"處理 {domain} 的 robots.txt")
-        rp = urllib.robotparser.RobotFileParser()
-        rp.set_url(robots_url)
+    async def _get_sitemaps(self, domain: str) -> list[str]:
+        """呼叫 robots_handler 取得 sitemap 清單"""
         try:
-            rp.read()
-            sitemaps = rp.sitemaps
-            if sitemaps:
-                return sitemaps
+            return await robots_handler.fetch_and_parse(domain, self.connection_manager)
         except Exception as e:  # noqa: BLE001
-            # 紀錄讀取 robots.txt 發生的錯誤
-            logger.error(f"讀取 robots.txt 發生錯誤: {e}")
-        return []
+            logger.error(f"解析 robots.txt 發生錯誤: {e}")
+            return []
 
     async def parse_sitemap(self, sitemap_url: str) -> tuple[list[str], list[str]]:
         """解析 sitemap 並回傳 URL 與巢狀 sitemap"""
@@ -79,10 +68,11 @@ class SitemapParser:
     async def discover_urls_from_sitemaps(self, domain: str):
         """透過 sitemap 發掘所有 URL"""
 
-        sitemaps_to_parse = self.get_sitemaps_from_robots(domain)
+        sitemaps_to_parse = await self._get_sitemaps(domain)
         if not sitemaps_to_parse:
-            # If no sitemaps in robots.txt, try the default sitemap.xml
-            sitemaps_to_parse.append(urljoin(domain, "sitemap.xml"))
+            # 若 robots.txt 無宣告 sitemap，預設嘗試 sitemap.xml
+            base = domain if domain.startswith("http") else f"https://{domain}"
+            sitemaps_to_parse.append(urljoin(base, "sitemap.xml"))
 
         parsed_sitemaps = set()
 
@@ -112,9 +102,10 @@ class SitemapParser:
             scheduler: URL 排程器
             batch_size: 每批寫入的 URL 數量
         """
-        sitemaps_to_parse = self.get_sitemaps_from_robots(domain)
+        sitemaps_to_parse = await self._get_sitemaps(domain)
         if not sitemaps_to_parse:
-            sitemaps_to_parse.append(urljoin(domain, "sitemap.xml"))
+            base = domain if domain.startswith("http") else f"https://{domain}"
+            sitemaps_to_parse.append(urljoin(base, "sitemap.xml"))
 
         parsed_sitemaps = set()
 
