@@ -36,7 +36,7 @@ agentic_rag/
 | 指令 | 說明 |
 |------|------|
 | `make discover DOMAIN=https://example.com` | 解析 sitemap 並寫入待爬取 URL |
-| `make crawl MAX_URLS=100` | 依據資料庫中的 URL 進行內容抓取 |
+| `make crawl DOMAIN=https://example.com BATCH_SIZE=10` | 依據資料庫中的 URL 進行內容抓取 |
 | `make embed LIMIT=100` | 為新文章產生向量嵌入 |
 | `make search QUERY="關鍵問題"` | 進行語義搜尋 |
 | `make migrate-supabase` | 將 PostgreSQL 資料遷移至 Supabase |
