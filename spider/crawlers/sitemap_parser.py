@@ -3,6 +3,7 @@ from urllib.parse import urljoin, urlparse
 import urllib.robotparser
 from crawl4ai import AsyncWebCrawler
 from spider.utils.connection_manager import EnhancedConnectionManager
+from .url_scheduler import URLScheduler
 
 class SitemapParser:
     def __init__(self, connection_manager: EnhancedConnectionManager, user_agent="*"):
@@ -130,4 +131,33 @@ class SitemapParser:
                 yield 'urls', urls
             
             # Add nested sitemaps to the queue for parsing
+            sitemaps_to_parse.extend(nested_sitemaps)
+
+    async def stream_discover(self, domain: str, scheduler: URLScheduler, batch_size: int = 100) -> None:
+        """串流解析 sitemap 並將 URL 直接寫入排程器
+
+        Args:
+            domain: 目標網域
+            scheduler: URL 排程器
+            batch_size: 每批寫入的 URL 數量
+        """
+        sitemaps_to_parse = self.get_sitemaps_from_robots(domain)
+        if not sitemaps_to_parse:
+            sitemaps_to_parse.append(urljoin(domain, "sitemap.xml"))
+
+        parsed_sitemaps = set()
+
+        while sitemaps_to_parse:
+            sitemap_url = sitemaps_to_parse.pop(0)
+            if sitemap_url in parsed_sitemaps:
+                continue
+
+            urls, nested_sitemaps = await self.parse_sitemap(sitemap_url)
+            parsed_sitemaps.add(sitemap_url)
+
+            # 將解析出的 URL 以批次寫入排程器，避免一次載入全部
+            for i in range(0, len(urls), batch_size):
+                batch = urls[i : i + batch_size]
+                await scheduler.enqueue_urls(batch)
+
             sitemaps_to_parse.extend(nested_sitemaps)
