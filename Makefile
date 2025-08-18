@@ -14,7 +14,7 @@ PYTHON := python3
 DOMAIN ?= $(TARGET_URL)
 QUERY ?= "What is Retrieval-Augmented Generation?"
 LIMIT ?= 100
-MAX_URLS ?= 100
+BATCH_SIZE ?= 10  # 每批處理的 URL 數量
 
 # --- 核心 RAG 流程 ---
 
@@ -23,8 +23,8 @@ discover:
 	@$(PYTHON) -m scripts.1_discover_urls --domains $(DOMAIN)
 
 crawl:
-	@echo "📄  步驟 2: 爬取已發現的 URL 內容 (上限: $(MAX_URLS))..."
-	@$(PYTHON) -m scripts.2_crawl_content --max_urls $(MAX_URLS)
+	@echo "📄  步驟 2: 爬取已發現的 URL 內容..."
+	@$(PYTHON) -m scripts.2_crawl_content --domain $(DOMAIN) --batch_size $(BATCH_SIZE)
 
 embed:
 	@echo "🧠  步驟 3: 為新文章生成向量嵌入 (上限: $(LIMIT))..."
@@ -38,7 +38,7 @@ search:
 run-pipeline:
 	@echo "🚀  執行完整的數據導入流程 for $(DOMAIN)..."
 	@make discover DOMAIN=$(DOMAIN)
-	@make crawl
+	@make crawl DOMAIN=$(DOMAIN)
 	@make embed
 	@echo "✅  數據導入流程完成！"
 
