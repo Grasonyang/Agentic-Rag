@@ -18,14 +18,15 @@
 """
 
 from typing import Dict, List, Optional
-import re
+from lxml import html as lxml_html
 from spider.utils.connection_manager import EnhancedConnectionManager
 from spider.utils.database_manager import EnhancedDatabaseManager
 from spider.utils.rate_limiter import RateLimiter
 from database.models import ArticleModel
+from .base_crawler import BaseCrawler
 
 
-class SimpleWebCrawler:
+class SimpleWebCrawler(BaseCrawler):
     """簡化版爬蟲，提供基本下載與儲存功能"""
 
     def __init__(
@@ -33,11 +34,9 @@ class SimpleWebCrawler:
         connection_manager: Optional[EnhancedConnectionManager] = None,
         db_manager: Optional[EnhancedDatabaseManager] = None,
         rate_limiter: Optional[RateLimiter] = None,
-    ):
-        # 若外部未提供連線管理器，則使用傳入的速率限制器建立
-        self.connection_manager = connection_manager or EnhancedConnectionManager(
-            rate_limiter=rate_limiter
-        )
+    ) -> None:
+        cm = connection_manager or EnhancedConnectionManager(rate_limiter=rate_limiter)
+        super().__init__(cm)
         self.db_manager = db_manager
         self.cookies: Dict[str, str] = {}
 
@@ -47,10 +46,13 @@ class SimpleWebCrawler:
 
     async def crawl_single(self, url: str) -> Dict[str, str]:
         """爬取單一 URL 並回傳結果"""
-        response = await self.connection_manager.get(url, cookies=self.cookies)
-        html = await response.text()
-        title_match = re.search(r"<title>(.*?)</title>", html, re.IGNORECASE | re.DOTALL)
-        title = title_match.group(1).strip() if title_match else ""
+        result = await self.fetch_html(url, cookies=self.cookies)
+        if not result["success"]:
+            return result
+
+        html = result["html"]
+        tree = lxml_html.fromstring(html)
+        title = (tree.findtext(".//title") or "").strip()
 
         result = {"success": True, "title": title, "content": html}
 
@@ -67,6 +69,8 @@ class SimpleWebCrawler:
         for u in urls:
             try:
                 results.append(await self.crawl_single(u))
-            except Exception as e:
-                results.append({"success": False, "error": str(e), "url": u})
+            except Exception as e:  # noqa: BLE001
+                err = self._error(e)
+                err["url"] = u
+                results.append(err)
         return results

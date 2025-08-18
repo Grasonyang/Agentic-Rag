@@ -20,12 +20,14 @@
 
 from typing import Dict
 from crawl4ai import AsyncWebCrawler
+from .base_crawler import BaseCrawler
 
 
-class WebCrawler:
+class WebCrawler(BaseCrawler):
     """基於 crawl4ai 的高性能爬蟲"""
 
-    def __init__(self, headless: bool = True, wait_time: int = 0, timeout: int = 10000):
+    def __init__(self, headless: bool = True, wait_time: int = 0, timeout: int = 10000) -> None:
+        super().__init__()
         self.headless = headless
         self.wait_time = wait_time
         self.timeout = timeout
@@ -33,11 +35,15 @@ class WebCrawler:
     async def crawl(self, url: str) -> Dict[str, str]:
         """爬取指定 URL 並回傳內容與標題"""
         async with AsyncWebCrawler(headless=self.headless) as crawler:
-            result = await crawler.arun(url, wait_for=self.wait_time, timeout=self.timeout)
-            if result.success:
-                return {
-                    "success": True,
-                    "title": getattr(result, "title", ""),
-                    "content": result.html,
-                }
-            return {"success": False, "error": result.error_message}
+            self.apply_robots(crawler)
+            try:
+                result = await crawler.arun(url, wait_for=self.wait_time, timeout=self.timeout)
+                if result.success:
+                    return {
+                        "success": True,
+                        "title": getattr(result, "title", ""),
+                        "content": result.html,
+                    }
+                return {"success": False, "error": result.error_message}
+            except Exception as e:  # noqa: BLE001
+                return self._error(e)
