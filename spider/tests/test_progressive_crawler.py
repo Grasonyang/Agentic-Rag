@@ -119,7 +119,11 @@ async def test_crawl_batch_order_and_status() -> None:
     processed = await crawler.crawl_batch()
 
     assert processed == 2
-    assert conn.requested == ["http://example.com/2", "http://example.com/1"]
+    assert conn.requested == [
+        "https://example.com/robots.txt",
+        "http://example.com/2",
+        "http://example.com/1",
+    ]
     assert scheduler.statuses["1"] == CrawlStatus.COMPLETED
     assert scheduler.statuses["2"] == CrawlStatus.COMPLETED
 

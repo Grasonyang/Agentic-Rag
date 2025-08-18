@@ -6,6 +6,7 @@
 
 import asyncio
 from typing import Optional
+from urllib.parse import urlparse
 
 from database.models import CrawlStatus
 from spider.utils.connection_manager import EnhancedConnectionManager
@@ -13,6 +14,7 @@ from spider.utils.retry_manager import RetryManager
 from spider.utils.enhanced_logger import get_spider_logger
 from spider.utils.rate_limiter import AdaptiveRateLimiter
 from .url_scheduler import URLScheduler
+from .robots_handler import fetch_and_parse, get_crawl_delay
 
 
 class ProgressiveCrawler:
@@ -91,6 +93,25 @@ class ProgressiveCrawler:
         urls = await self.scheduler.dequeue_batch(self.batch_size)
         if not urls:
             return 0
+
+        # 依網域分組並預先處理 robots.txt
+        domain_groups: dict[str, list] = {}
+        for u in urls:
+            domain = getattr(u, "domain", urlparse(u.url).netloc)
+            domain_groups.setdefault(domain, []).append(u)
+
+        for domain in domain_groups:
+            try:
+                # 下載並解析該網域的 robots.txt
+                await fetch_and_parse(domain, self.connection_manager)
+                crawl_delay = await get_crawl_delay(domain, self.connection_manager)
+                if crawl_delay:
+                    rl = getattr(self.connection_manager, "_rate_limiter", None)
+                    if rl:
+                        rl.config.min_delay = max(rl.config.min_delay, float(crawl_delay))
+            except Exception as e:  # noqa: BLE001
+                # robots 取得失敗時記錄警告但不中斷流程
+                self.logger.warning(f"無法下載 {domain} 的 robots.txt: {e}")
 
         sem = asyncio.Semaphore(self.concurrency)
 

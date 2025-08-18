@@ -74,15 +74,15 @@ async def test_is_allowed_and_get_crawl_delay() -> None:
 
 
 @pytest.mark.asyncio
-async def test_fetch_and_parse_logs_error(caplog) -> None:
-    """當取得 robots.txt 失敗時應記錄錯誤"""
+async def test_fetch_and_parse_logs_warning(caplog) -> None:
+    """當取得 robots.txt 失敗時應記錄警告"""
 
     robots_handler._robots_cache.clear()
     robots_handler._crawl_delay_cache.clear()
 
     cm = ErrorConnectionManager()
 
-    with caplog.at_level(logging.ERROR, logger="robots_handler"):
+    with caplog.at_level(logging.WARNING, logger="robots_handler"):
         await robots_handler.fetch_and_parse("https://example.com", cm)
 
     assert any("404" in record.message for record in caplog.records)
