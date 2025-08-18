@@ -2,10 +2,10 @@
 
 # 註解使用繁體中文
 
-import sys
 import types
+import sys
+import datetime
 from dataclasses import dataclass
-from datetime import datetime
 
 import pytest
 
@@ -38,23 +38,24 @@ class FakeURL:
 
     id: str
     url: str
-    last_crawl_at: datetime | None = None
+    last_crawl_at: datetime.datetime | None = None
     crawl_attempts: int = 0
 
 
-class FakeDBManager:
-    """記錄狀態的簡易資料庫管理器"""
+class FakeScheduler:
+    """記錄狀態的簡易 URLScheduler"""
 
     def __init__(self, urls):
         self.urls = urls
         self.statuses = {u.id: CrawlStatus.PENDING for u in urls}
 
-    async def get_pending_urls(self, batch_size):
-        return [u for u in self.urls if self.statuses[u.id] == CrawlStatus.PENDING][:batch_size]
+    async def dequeue_batch(self, batch_size):
+        pending = [u for u in self.urls if self.statuses[u.id] == CrawlStatus.PENDING]
+        pending.sort(key=lambda u: u.last_crawl_at or datetime.datetime.min)
+        return pending[:batch_size]
 
-    async def update_crawl_status(self, uid, status, error_message=None):  # noqa: ANN001, D401
+    async def update_status(self, uid, status, error_message=None):  # noqa: ANN001, D401
         """更新狀態"""
-
         self.statuses[uid] = status
 
 
@@ -63,7 +64,6 @@ class FakeResponse:
 
     async def text(self):  # noqa: D401
         """回傳空字串"""
-
         return ""
 
 
@@ -85,12 +85,10 @@ class FakeRetryManager:
 
     def should_retry(self, exc: Exception, attempt: int) -> bool:  # noqa: ANN001, D401
         """不重試"""
-
         return False
 
     def calculate_delay(self, attempt: int) -> float:  # noqa: D401
         """回傳零延遲"""
-
         return 0.0
 
 
@@ -99,19 +97,19 @@ async def test_crawl_batch_order_and_status() -> None:
     """確認依 `last_crawl_at` 順序處理並更新狀態"""
 
     urls = [
-        FakeURL("1", "http://example.com/1", datetime(2020, 1, 2)),
-        FakeURL("2", "http://example.com/2", datetime(2020, 1, 1)),
+        FakeURL("1", "http://example.com/1", datetime.datetime(2020, 1, 2)),
+        FakeURL("2", "http://example.com/2", datetime.datetime(2020, 1, 1)),
     ]
-    db = FakeDBManager(urls)
+    scheduler = FakeScheduler(urls)
     conn = FakeConnectionManager()
-    crawler = ProgressiveCrawler(db, conn, FakeRetryManager(), batch_size=10)
+    crawler = ProgressiveCrawler(scheduler, conn, FakeRetryManager(), batch_size=10)
 
     processed = await crawler.crawl_batch()
 
     assert processed == 2
     assert conn.requested == ["http://example.com/2", "http://example.com/1"]
-    assert db.statuses["1"] == CrawlStatus.COMPLETED
-    assert db.statuses["2"] == CrawlStatus.COMPLETED
+    assert scheduler.statuses["1"] == CrawlStatus.COMPLETED
+    assert scheduler.statuses["2"] == CrawlStatus.COMPLETED
 
 
 @pytest.mark.asyncio
@@ -119,11 +117,10 @@ async def test_crawl_batch_error_resets_pending() -> None:
     """確認錯誤後會重設為待處理"""
 
     urls = [FakeURL("1", "http://example.com/fail")]
-    db = FakeDBManager(urls)
+    scheduler = FakeScheduler(urls)
     conn = FakeConnectionManager()
-    crawler = ProgressiveCrawler(db, conn, FakeRetryManager(), batch_size=10)
+    crawler = ProgressiveCrawler(scheduler, conn, FakeRetryManager(), batch_size=10)
 
     await crawler.crawl_batch()
 
-    assert db.statuses["1"] == CrawlStatus.PENDING
-
+    assert scheduler.statuses["1"] == CrawlStatus.PENDING

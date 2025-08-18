@@ -7,37 +7,58 @@ import pytest
 from spider.crawlers import robots_handler
 
 
-class MockResponse:
-    """簡單的回應物件"""
+class FakeResponse:
+    """簡單的非同步回應物件"""
 
-    def __init__(self, text: str, status_code: int = 200) -> None:
-        self.text = text
-        self.status_code = status_code
+    def __init__(self, text: str, status: int = 200) -> None:
+        self._text = text
+        self.status = status
+
+    async def text(self) -> str:  # noqa: D401
+        """回傳預設文字"""
+        return self._text
 
 
-def test_is_allowed_and_crawl_delay(monkeypatch: pytest.MonkeyPatch) -> None:
-    """模擬 `robots.txt` 內容並測試允許與延遲"""
+class FakeConnectionManager:
+    """模擬 `EnhancedConnectionManager` 的簡易版本"""
 
-    # 清除快取避免測試互相干擾
-    robots_handler._robots_cache.clear()
-    robots_handler._crawl_delay_cache.clear()
+    def __init__(self) -> None:
+        self.requested: list[str] = []
 
-    def mock_get(url: str, timeout: int = 10):  # noqa: ANN001
-        """回傳自訂的 `robots.txt` 內容"""
-
+    async def get(self, url: str) -> FakeResponse:
+        self.requested.append(url)
         content = "\n".join([
             "User-agent: *",
             "Disallow: /private",
             "Crawl-delay: 3",
         ])
-        return MockResponse(content)
+        return FakeResponse(content)
 
-    # 取代 `requests.get`
-    monkeypatch.setattr(robots_handler.requests, "get", mock_get)
 
-    # `/public` 應允許被爬取
-    assert robots_handler.is_allowed("https://example.com/public") is True
-    # `/private` 應被禁止
-    assert robots_handler.is_allowed("https://example.com/private/data") is False
-    # 應回傳設定的 crawl-delay 秒數
-    assert robots_handler.get_crawl_delay("https://example.com") == 3
+@pytest.mark.asyncio
+async def test_fetch_and_parse_caches() -> None:
+    """驗證 `fetch_and_parse` 能寫入快取"""
+
+    robots_handler._robots_cache.clear()
+    robots_handler._crawl_delay_cache.clear()
+
+    cm = FakeConnectionManager()
+    await robots_handler.fetch_and_parse("https://example.com", cm)
+
+    assert "example.com" in robots_handler._robots_cache
+    assert robots_handler._crawl_delay_cache["example.com"] == 3
+    assert cm.requested[0].endswith("/robots.txt")
+
+
+@pytest.mark.asyncio
+async def test_is_allowed_and_get_crawl_delay() -> None:
+    """測試 `is_allowed` 與 `get_crawl_delay`"""
+
+    robots_handler._robots_cache.clear()
+    robots_handler._crawl_delay_cache.clear()
+
+    cm = FakeConnectionManager()
+
+    assert await robots_handler.is_allowed("https://example.com/public", cm) is True
+    assert await robots_handler.is_allowed("https://example.com/private/data", cm) is False
+    assert await robots_handler.get_crawl_delay("https://example.com", cm) == 3
