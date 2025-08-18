@@ -1,17 +1,16 @@
 """漸進式爬蟲
 
-此模組提供一個簡單的輪詢式爬蟲，
-會依據資料庫中的 `last_crawl_at` 排序來逐步抓取 URL。
+此模組提供可調整並行數的爬蟲工作者，
+透過 URLScheduler 取得待抓取佇列，並以 asyncio.gather 同步處理多筆 URL。
 """
 
 import asyncio
-from datetime import datetime
 
 from database.models import CrawlStatus
 from spider.utils.connection_manager import EnhancedConnectionManager
-from spider.utils.database_manager import EnhancedDatabaseManager
 from spider.utils.retry_manager import RetryManager
 from spider.utils.enhanced_logger import get_spider_logger
+from .url_scheduler import URLScheduler
 
 
 class ProgressiveCrawler:
@@ -19,23 +18,26 @@ class ProgressiveCrawler:
 
     def __init__(
         self,
-        db_manager: EnhancedDatabaseManager,
+        scheduler: URLScheduler,
         connection_manager: EnhancedConnectionManager,
         retry_manager: RetryManager,
         batch_size: int = 10,
+        concurrency: int = 5,
     ) -> None:
         """初始化爬蟲
 
         Args:
-            db_manager: 資料庫管理器
+            scheduler: URL 排程器
             connection_manager: 連線管理器
             retry_manager: 重試管理器
             batch_size: 每次抓取的 URL 數量
+            concurrency: 同時處理的工作數
         """
-        self.db_manager = db_manager
+        self.scheduler = scheduler
         self.connection_manager = connection_manager
         self.retry_manager = retry_manager
         self.batch_size = batch_size
+        self.concurrency = concurrency
         self.logger = get_spider_logger("progressive_crawler")
 
     async def _fetch_with_retry(self, url: str) -> None:
@@ -61,13 +63,13 @@ class ProgressiveCrawler:
 
     async def _process_url(self, url_model) -> None:
         """處理單一 URL"""
-        await self.db_manager.update_crawl_status(url_model.id, CrawlStatus.CRAWLING)
+        await self.scheduler.update_status(url_model.id, CrawlStatus.CRAWLING)
         try:
             await self._fetch_with_retry(url_model.url)
-            await self.db_manager.update_crawl_status(url_model.id, CrawlStatus.COMPLETED)
+            await self.scheduler.update_status(url_model.id, CrawlStatus.COMPLETED)
         except Exception as e:  # noqa: BLE001
             # 更新為錯誤狀態
-            await self.db_manager.update_crawl_status(
+            await self.scheduler.update_status(
                 url_model.id, CrawlStatus.ERROR, str(e)
             )
             # 計算延遲後重新排回待處理
@@ -77,19 +79,21 @@ class ProgressiveCrawler:
                 extra={"url": url_model.url},
             )
             await asyncio.sleep(delay)
-            await self.db_manager.update_crawl_status(url_model.id, CrawlStatus.PENDING)
+            await self.scheduler.update_status(url_model.id, CrawlStatus.PENDING)
 
     async def crawl_batch(self) -> int:
         """抓取一批待處理 URL"""
-        urls = await self.db_manager.get_pending_urls(self.batch_size)
+        urls = await self.scheduler.dequeue_batch(self.batch_size)
         if not urls:
             return 0
 
-        # 依 last_crawl_at 排序，確保輪詢式抓取
-        urls.sort(key=lambda u: u.last_crawl_at or datetime.min)
+        sem = asyncio.Semaphore(self.concurrency)
 
-        for url_model in urls:
-            await self._process_url(url_model)
+        async def worker(u):
+            async with sem:
+                await self._process_url(u)
+
+        await asyncio.gather(*(worker(u) for u in urls))
 
         return len(urls)
 
