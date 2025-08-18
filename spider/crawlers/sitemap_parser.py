@@ -1,5 +1,6 @@
 from urllib.parse import urljoin, urlparse
 import urllib.robotparser
+from defusedxml import ElementTree as ET
 from crawl4ai import AsyncWebCrawler
 from spider.utils.connection_manager import EnhancedConnectionManager
 from lxml import etree
@@ -11,7 +12,7 @@ class SitemapParser:
         self.user_agent = user_agent
 
     def get_sitemaps_from_robots(self, domain: str) -> list[str]:
-        """解析 robots.txt 取得 sitemap URL"""
+        """解析 robots.txt 以取得 sitemap URLs。"""
         robots_url = urljoin(domain, "robots.txt")
         print(f"Processing robots.txt for domain: {domain}")
         rp = urllib.robotparser.RobotFileParser()
@@ -79,6 +80,7 @@ class SitemapParser:
 
     async def discover_urls_from_sitemaps(self, domain: str):
         """透過 sitemap 發掘所有 URL"""
+
         sitemaps_to_parse = self.get_sitemaps_from_robots(domain)
         if not sitemaps_to_parse:
             # If no sitemaps in robots.txt, try the default sitemap.xml
