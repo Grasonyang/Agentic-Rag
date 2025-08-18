@@ -61,12 +61,12 @@ db-clear:
 	@$(PYTHON) -m scripts.database.make-clear --force
 
 db-tables:
-        @echo "📊  檢查資料庫各表記錄數..."
-        @$(PYTHON) -m scripts.database.make-tables
+	@echo "📊  檢查資料庫各表記錄數..."
+	@$(PYTHON) -m scripts.database.make-tables
 
 migrate-supabase:
-        @echo "🚚  將 PostgreSQL 資料遷移至 Supabase..."
-        @$(PYTHON) -m scripts.database.migrate_to_supabase
+	@echo "🚚  將 PostgreSQL 資料遷移至 Supabase..."
+	@$(PYTHON) -m scripts.database.migrate_to_supabase
 
 # --- 專案管理 ---
 
