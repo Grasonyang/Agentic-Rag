@@ -3,6 +3,7 @@
 import logging
 from typing import List, Optional
 from datetime import datetime
+from psycopg2.extras import execute_values
 
 from .client import PostgresClient
 from .models import (
@@ -90,6 +91,45 @@ class DatabaseOperations:
             if self.create_discovered_url(model):
                 count += 1
         return count
+
+    def bulk_insert_discovered_urls(self, url_models: List[DiscoveredURLModel]) -> int:
+        """使用 execute_values 一次插入多筆 URL"""
+        sql = (
+            """
+            INSERT INTO discovered_urls (
+                id, url, domain, source_sitemap, priority,
+                changefreq, lastmod, crawl_status, crawl_attempts,
+                created_at, updated_at
+            ) VALUES %s
+            ON CONFLICT (url) DO NOTHING
+            """
+        )
+        values = [
+            (
+                m.id,
+                m.url,
+                m.domain,
+                m.source_sitemap,
+                m.priority,
+                m.changefreq.value if m.changefreq else None,
+                m.lastmod,
+                m.crawl_status.value,
+                m.crawl_attempts,
+                m.created_at,
+                m.updated_at,
+            )
+            for m in url_models
+        ]
+        try:
+            with self.client.connection.cursor() as cur:
+                execute_values(cur, sql, values)
+                count = cur.rowcount
+            self.client.connection.commit()
+            return count
+        except Exception as e:
+            self.client.connection.rollback()
+            logger.error(f"批次新增 URL 失敗: {e}")
+            return 0
 
     def get_pending_urls(self, limit: Optional[int] = 100) -> List[DiscoveredURLModel]:
         """取得尚未處理的 URL"""

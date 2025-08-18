@@ -221,11 +221,18 @@ class EnhancedDatabaseManager:
                 continue
         
         self.logger.log_database_operation(
-            "bulk_create_discovered_urls", "discovered_urls", 
+            "bulk_create_discovered_urls", "discovered_urls",
             True, total_created
         )
-        
+
         return total_created
+
+    async def bulk_insert_discovered_urls(self, url_models: List) -> int:
+        """使用 execute_values 批次插入 URL"""
+        return await self._execute_async_with_retry(
+            lambda: self._db_ops.bulk_insert_discovered_urls(url_models),
+            "bulk_insert_discovered_urls",
+        )
     
     async def get_pending_urls(self, limit: int = 100) -> List:
         """獲取待處理的URL"""

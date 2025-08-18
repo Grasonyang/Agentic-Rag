@@ -44,7 +44,8 @@ class URLScheduler:
         
         if batch:
             models = [DiscoveredURLModel(**item) for item in batch]
-            await self.db_manager.bulk_create_discovered_urls(models)
+            # 使用批次插入加速寫入
+            await self.db_manager.bulk_insert_discovered_urls(models)
 
     async def close(self) -> None:
         await self.flush_to_db()
@@ -89,11 +90,12 @@ class URLScheduler:
 
             # 批量寫入資料庫
             if len(batch) >= batch_size:
-                total += await self.db_manager.bulk_create_discovered_urls(batch)
+                total += await self.db_manager.bulk_insert_discovered_urls(batch)
                 batch.clear()
 
+        # 處理剩餘未滿一批的資料
         if batch:
-            total += await self.db_manager.bulk_create_discovered_urls(batch)
+            total += await self.db_manager.bulk_insert_discovered_urls(batch)
 
         return total
 
