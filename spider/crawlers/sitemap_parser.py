@@ -1,7 +1,5 @@
 from urllib.parse import urljoin, urlparse
 import urllib.robotparser
-from defusedxml import ElementTree as ET
-from crawl4ai import AsyncWebCrawler
 from spider.utils.connection_manager import EnhancedConnectionManager
 from spider.utils.enhanced_logger import get_spider_logger
 from lxml import etree
@@ -37,27 +35,17 @@ class SitemapParser:
         urls = []
         nested_sitemaps = []
         try:
-            async with AsyncWebCrawler() as crawler:
-                result = await crawler.arun(sitemap_url)
+            response = await self.connection_manager.get(sitemap_url)
+            content = await response.text()
+            root = etree.fromstring(content.encode())
 
-                if not result.success:
-                    # 取得 sitemap 失敗時記錄錯誤
-                    logger.error(
-                        f"無法取得 sitemap {sitemap_url}: {result.error_message}"
-                    )
-                    return urls, nested_sitemaps
-
-                # 使用 lxml 解析 XML 內容
-                content = result.html
-                root = etree.fromstring(content.encode())
-
-                for loc in root.xpath('//loc'):
-                    url = (loc.text or '').strip()
-                    parsed_url = urlparse(url)
-                    if url.endswith('.xml') or 'sitemap' in parsed_url.path.lower():
-                        nested_sitemaps.append(url)
-                    else:
-                        urls.append(url)
+            for loc in root.xpath('//loc'):
+                url = (loc.text or '').strip()
+                parsed_url = urlparse(url)
+                if url.endswith('.xml') or 'sitemap' in parsed_url.path.lower():
+                    nested_sitemaps.append(url)
+                else:
+                    urls.append(url)
         except Exception as e:  # noqa: BLE001
             # 抓取 sitemap 時若發生例外，記錄錯誤
             logger.error(f"抓取 sitemap {sitemap_url} 時發生錯誤: {e}")
@@ -73,16 +61,12 @@ class SitemapParser:
 
             # 檢查 Content-Type 是否為 XML
             if 'application/xml' in content_type or 'text/xml' in content_type:
-                # 使用 crawl4ai 取得內容進一步確認
-                async with AsyncWebCrawler() as crawler:
-                    result = await crawler.arun(url, timeout=10000)
-
-                    if result.success:
-                        content = result.html.lower()
-                        if '<urlset' in content or '<sitemapindex' in content:
-                            # 成功確認為 sitemap 時輸出除錯資訊
-                            logger.debug(f"成功驗證 {url} 為 sitemap")
-                            return True
+                result = await self.connection_manager.get(url)
+                content = (await result.text()).lower()
+                if '<urlset' in content or '<sitemapindex' in content:
+                    # 成功確認為 sitemap 時輸出除錯資訊
+                    logger.debug(f"成功驗證 {url} 為 sitemap")
+                    return True
 
             return False
         except Exception as e:  # noqa: BLE001
