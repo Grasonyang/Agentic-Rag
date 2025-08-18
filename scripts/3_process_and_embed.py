@@ -13,7 +13,6 @@ python -m scripts.3_process_and_embed --limit 10
 """
 
 import argparse
-import logging
 
 # 配置專案根目錄
 import sys
@@ -24,14 +23,9 @@ from database.operations import get_database_operations, DatabaseOperations
 from database.models import ChunkModel
 from spider.chunking.sentence_chunking import SentenceChunking, SentenceChunkingConfig
 from embedding.embedding import embed_text, get_embedding_dimension
+from scripts.utils import get_script_logger
 
-# 配置日誌
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - [%(name)s] - %(message)s',
-    stream=sys.stdout
-)
-logger = logging.getLogger(__name__)
+logger = get_script_logger("process_and_embed")
 
 def main(limit: int):
     """
