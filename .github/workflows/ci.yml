@@ -1,0 +1,23 @@
+# 透過 GitHub Actions 執行測試流程
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 取得原始碼
+        uses: actions/checkout@v3
+      - name: 設定 Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.x'
+      - name: 設定環境變數
+        run: cp .env.template .env
+      - name: 安裝依賴
+        run: make install
+      - name: 執行測試
+        run: make test
