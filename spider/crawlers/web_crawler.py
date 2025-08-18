@@ -22,7 +22,6 @@
 from typing import Dict, Optional
 from crawl4ai import AsyncWebCrawler
 from .base_crawler import BaseCrawler
-from spider.crawlers.robots_handler import apply_to_crawl4ai
 from spider.utils.connection_manager import EnhancedConnectionManager
 from spider.utils.rate_limiter import AdaptiveRateLimiter
 
@@ -40,7 +39,6 @@ class WebCrawler(BaseCrawler):
         cm = connection_manager or EnhancedConnectionManager(
             rate_limiter=AdaptiveRateLimiter()
         )
-        apply_to_crawl4ai(cm)  # 先行取得 robots 設定
         super().__init__(cm)
         self.headless = headless
         self.wait_time = wait_time
