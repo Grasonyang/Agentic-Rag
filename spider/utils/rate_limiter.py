@@ -10,6 +10,7 @@ import logging
 from typing import Dict, Optional
 from dataclasses import dataclass
 from datetime import datetime, timedelta
+from urllib.parse import urlparse
 
 logger = logging.getLogger(__name__)
 
@@ -338,3 +339,53 @@ class AdaptiveRateLimiter(RateLimiter):
             if error_rate > 0.1:  # 錯誤率超過10%
                 self.adjust_rate(self.config.requests_per_second * 0.7)
                 self.report_failure(domain, severe=True)
+
+    def apply_to_crawl4ai(self, session):
+        """將限速器套用至 crawl4ai session"""
+
+        async def _before_request(url: str, request_kwargs: dict):
+            """請求前取得令牌並檢查 robots 延遲"""
+            domain = urlparse(url).netloc
+
+            # 若 robots_handler 提供 crawl-delay，調整最小等待時間
+            robots_handler = getattr(session, "robots_handler", None)
+            if robots_handler:
+                try:
+                    crawl_delay = None
+                    if hasattr(robots_handler, "get_crawl_delay"):
+                        crawl_delay = robots_handler.get_crawl_delay(domain)
+                        if asyncio.iscoroutine(crawl_delay):
+                            crawl_delay = await crawl_delay
+                    elif hasattr(robots_handler, "crawl_delay"):
+                        crawl_delay = robots_handler.crawl_delay
+                    if crawl_delay:
+                        self.config.min_delay = max(self.config.min_delay, float(crawl_delay))
+                except Exception:
+                    pass
+
+            # 記錄開始時間與域名
+            self._current_domain = domain
+            self._current_start = time.time()
+
+            await self.acquire_async(domain)
+
+        async def _after_request(result):
+            """請求成功後記錄響應時間"""
+            duration = time.time() - getattr(self, "_current_start", time.time())
+            domain = getattr(self, "_current_domain", "")
+            self.record_response(domain, duration, True)
+
+        async def _on_error(exc):
+            """請求失敗後記錄錯誤"""
+            duration = time.time() - getattr(self, "_current_start", time.time())
+            domain = getattr(self, "_current_domain", "")
+            self.record_response(domain, duration, False)
+
+        # 註冊 crawl4ai 的 hooks
+        if hasattr(session, "crawler_strategy") and hasattr(session.crawler_strategy, "set_hook"):
+            session.crawler_strategy.set_hook("before_request", _before_request)
+            session.crawler_strategy.set_hook("after_request", _after_request)
+            session.crawler_strategy.set_hook("on_error", _on_error)
+
+        return self
+
