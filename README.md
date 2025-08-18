@@ -55,8 +55,9 @@ make migrate-supabase
 此指令會呼叫 `scripts/database/migrate_to_supabase.py`，示範如何從本地 PostgreSQL 讀取資料並寫入 Supabase。可依需求擴充遷移邏輯。
 
 ## 🧪 測試
+提交 PR 前，請務必執行 `make test`，確保單元與非同步測試皆通過。
 ```bash
-pytest
+make test
 ```
 
 ---
