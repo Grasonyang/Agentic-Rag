@@ -13,7 +13,7 @@
     asyncio.run(demo())
 
 參數說明:
-    connection_manager (EnhancedConnectionManager): HTTP 連線管理器
+    connection_manager (EnhancedConnectionManager | None): HTTP 連線管理器
     db_manager (EnhancedDatabaseManager | None): 資料庫管理器，若提供則自動儲存文章
 """
 
@@ -21,7 +21,8 @@ from typing import Dict, List, Optional
 from lxml import html as lxml_html
 from spider.utils.connection_manager import EnhancedConnectionManager
 from spider.utils.database_manager import EnhancedDatabaseManager
-from spider.utils.rate_limiter import RateLimiter
+from spider.utils.rate_limiter import AdaptiveRateLimiter
+from spider.crawlers.robots_handler import apply_to_crawl4ai
 from database.models import ArticleModel
 from .base_crawler import BaseCrawler
 
@@ -33,9 +34,11 @@ class SimpleWebCrawler(BaseCrawler):
         self,
         connection_manager: Optional[EnhancedConnectionManager] = None,
         db_manager: Optional[EnhancedDatabaseManager] = None,
-        rate_limiter: Optional[RateLimiter] = None,
     ) -> None:
-        cm = connection_manager or EnhancedConnectionManager(rate_limiter=rate_limiter)
+        cm = connection_manager or EnhancedConnectionManager(
+            rate_limiter=AdaptiveRateLimiter()
+        )
+        apply_to_crawl4ai(cm)  # 先行取得 robots 設定
         super().__init__(cm)
         self.db_manager = db_manager
         self.cookies: Dict[str, str] = {}

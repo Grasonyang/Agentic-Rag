@@ -16,18 +16,32 @@
     headless (bool): 是否使用無頭瀏覽器模式
     wait_time (int): 等待 JavaScript 執行的時間 (毫秒)
     timeout (int): 單頁面載入的最大等待時間 (毫秒)
+    connection_manager (EnhancedConnectionManager | None): HTTP 連線管理器
 """
 
-from typing import Dict
+from typing import Dict, Optional
 from crawl4ai import AsyncWebCrawler
 from .base_crawler import BaseCrawler
+from spider.crawlers.robots_handler import apply_to_crawl4ai
+from spider.utils.connection_manager import EnhancedConnectionManager
+from spider.utils.rate_limiter import AdaptiveRateLimiter
 
 
 class WebCrawler(BaseCrawler):
     """基於 crawl4ai 的高性能爬蟲"""
 
-    def __init__(self, headless: bool = True, wait_time: int = 0, timeout: int = 10000) -> None:
-        super().__init__()
+    def __init__(
+        self,
+        headless: bool = True,
+        wait_time: int = 0,
+        timeout: int = 10000,
+        connection_manager: Optional[EnhancedConnectionManager] = None,
+    ) -> None:
+        cm = connection_manager or EnhancedConnectionManager(
+            rate_limiter=AdaptiveRateLimiter()
+        )
+        apply_to_crawl4ai(cm)  # 先行取得 robots 設定
+        super().__init__(cm)
         self.headless = headless
         self.wait_time = wait_time
         self.timeout = timeout
