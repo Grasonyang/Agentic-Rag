@@ -42,7 +42,12 @@ agentic_rag/
 | `make migrate-supabase` | 將 PostgreSQL 資料遷移至 Supabase |
 
 ## 🪵 日誌
-執行上述指令時會在 `logs/` 目錄生成詳細日誌，可於此檢視執行狀態與錯誤資訊。
+執行上述指令或單獨呼叫腳本時，系統會在 `logs/` 目錄生成 `<腳本名稱>.log` 等日誌檔。
+例如可透過以下指令即時查看執行狀況：
+
+```bash
+tail -f logs/discover.log
+```
 
 ## 🗺️ 漸進式抓取策略
 1. 先讀取 `robots.txt` 決定允許抓取的路徑。

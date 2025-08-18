@@ -18,12 +18,13 @@ from spider.crawlers.sitemap_parser import SitemapParser
 from spider.crawlers.url_scheduler import URLScheduler
 from spider.utils.connection_manager import EnhancedConnectionManager
 from spider.utils.database_manager import EnhancedDatabaseManager
-from spider.utils.enhanced_logger import get_spider_logger
+from scripts.utils import get_script_logger
 
 # 載入環境設定
 load_config()
 
-logger = get_spider_logger("discover")
+# 建立日誌器
+logger = get_script_logger("discover")
 
 async def main(domains: list[str]) -> None:
     """主程式入口"""

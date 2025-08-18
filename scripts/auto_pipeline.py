@@ -5,7 +5,6 @@
 """
 import argparse
 import asyncio
-import logging
 import os
 import sys
 from importlib import import_module
@@ -13,18 +12,10 @@ from importlib import import_module
 # 加入專案根目錄以便匯入模組
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from spider.utils.enhanced_logger import get_spider_logger
+from scripts.utils import get_script_logger
 
-# 配置基礎日誌輸出
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(levelname)s - [%(name)s] - %(message)s",
-    stream=sys.stdout,
-)
-logger = logging.getLogger(__name__)
-
-# 取得增強版日誌器
-spider_logger = get_spider_logger("auto_pipeline")
+# 建立日誌器
+logger = get_script_logger("auto_pipeline")
 
 
 def import_script(name: str):
@@ -35,7 +26,6 @@ def import_script(name: str):
 async def run_once(domain: str, batch_size: int):
     """執行一次完整流程"""
     logger.info("開始執行一次管線流程")
-    spider_logger.logger.info("開始執行一次管線流程")
 
     # discover
     discover = import_script("1_discover_urls")
@@ -50,7 +40,6 @@ async def run_once(domain: str, batch_size: int):
     embed.main(batch_size)
 
     logger.info("本輪流程完成")
-    spider_logger.logger.info("本輪流程完成")
 
 
 async def schedule_loop(domain: str, batch_size: int, interval: int):
@@ -58,7 +47,6 @@ async def schedule_loop(domain: str, batch_size: int, interval: int):
     while True:
         await run_once(domain, batch_size)
         logger.info(f"等待 {interval} 秒後進行下一輪...")
-        spider_logger.logger.info(f"等待 {interval} 秒後進行下一輪...")
         await asyncio.sleep(interval)
 
 
@@ -72,7 +60,6 @@ def main():
 
     if args.schedule:
         logger.info(f"啟動長駐模式，間隔 {args.schedule} 秒")
-        spider_logger.logger.info(f"啟動長駐模式，間隔 {args.schedule} 秒")
         asyncio.run(schedule_loop(args.domain, args.batch_size, args.schedule))
     else:
         asyncio.run(run_once(args.domain, args.batch_size))

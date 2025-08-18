@@ -18,12 +18,12 @@ from spider.utils.connection_manager import EnhancedConnectionManager
 from spider.utils.database_manager import EnhancedDatabaseManager
 from spider.utils.rate_limiter import AdaptiveRateLimiter
 from spider.utils.retry_manager import RetryManager
-from spider.utils.enhanced_logger import get_spider_logger
+from scripts.utils import get_script_logger
 
 # 載入環境設定
 load_config()
 
-logger = get_spider_logger("crawl")
+logger = get_script_logger("crawl")
 
 
 async def main(batch_size: int) -> None:
