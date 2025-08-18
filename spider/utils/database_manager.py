@@ -205,16 +205,16 @@ class EnhancedDatabaseManager:
         
         for i in range(0, len(url_models), batch_size):
             batch = url_models[i:i + batch_size]
-            
+
             try:
                 count = await self._execute_async_with_retry(
-                    lambda: self._db_ops.bulk_create_discovered_urls(batch),
-                    f"bulk_create_discovered_urls_batch_{i//batch_size + 1}"
+                    lambda: self._db_ops.bulk_insert_discovered_urls(batch),
+                    f"bulk_insert_discovered_urls_batch_{i//batch_size + 1}"
                 )
                 total_created += count
-                
-                self.logger.info(f"批量創建URL完成：批次 {i//batch_size + 1}, 創建 {count} 條記錄")
-                
+
+                self.logger.info(f"批量創建URL完成：批次 {i//batch_size + 1}, 新增 {count} 條記錄")
+
             except Exception as e:
                 self.logger.error(f"批量創建URL失敗：批次 {i//batch_size + 1}, 錯誤: {e}")
                 # 繼續處理下一批次

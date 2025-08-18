@@ -84,16 +84,8 @@ class DatabaseOperations:
             logger.error(f"新增 URL 失敗: {e}")
             return False
 
-    def bulk_create_discovered_urls(self, url_models: List[DiscoveredURLModel]) -> int:
-        """批次新增待爬取 URL"""
-        count = 0
-        for model in url_models:
-            if self.create_discovered_url(model):
-                count += 1
-        return count
-
     def bulk_insert_discovered_urls(self, url_models: List[DiscoveredURLModel]) -> int:
-        """使用 execute_values 一次插入多筆 URL"""
+        """使用 `execute_values` 一次插入多筆 URL，並回傳成功筆數"""
         sql = (
             """
             INSERT INTO discovered_urls (
@@ -102,6 +94,7 @@ class DatabaseOperations:
                 created_at, updated_at
             ) VALUES %s
             ON CONFLICT (url) DO NOTHING
+            RETURNING id
             """
         )
         values = [
@@ -122,14 +115,19 @@ class DatabaseOperations:
         ]
         try:
             with self.client.connection.cursor() as cur:
-                execute_values(cur, sql, values)
-                count = cur.rowcount
+                # fetch=True 會回傳成功插入的列
+                result = execute_values(cur, sql, values, fetch=True)
+                inserted = len(result)
             self.client.connection.commit()
-            return count
+            return inserted
         except Exception as e:
             self.client.connection.rollback()
             logger.error(f"批次新增 URL 失敗: {e}")
             return 0
+
+    def bulk_create_discovered_urls(self, url_models: List[DiscoveredURLModel]) -> int:
+        """向後相容：轉呼叫 `bulk_insert_discovered_urls`"""
+        return self.bulk_insert_discovered_urls(url_models)
 
     def get_pending_urls(self, limit: Optional[int] = 100) -> List[DiscoveredURLModel]:
         """取得尚未處理的 URL"""
