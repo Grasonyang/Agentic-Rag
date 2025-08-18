@@ -1,6 +1,7 @@
 import requests
 from urllib.parse import urljoin, urlparse
 import urllib.robotparser
+from defusedxml import ElementTree as ET
 from crawl4ai import AsyncWebCrawler
 from spider.utils.connection_manager import EnhancedConnectionManager
 
@@ -10,9 +11,7 @@ class SitemapParser:
         self.user_agent = user_agent
 
     def get_sitemaps_from_robots(self, domain: str) -> list[str]:
-        """
-        Parses robots.txt to find sitemap URLs.
-        """
+        """解析 robots.txt 以取得 sitemap URLs。"""
         robots_url = urljoin(domain, "robots.txt")
         print(f"Processing robots.txt for domain: {domain}")
         rp = urllib.robotparser.RobotFileParser()
@@ -27,9 +26,7 @@ class SitemapParser:
         return []
 
     async def parse_sitemap(self, sitemap_url: str) -> tuple[list[str], list[str]]:
-        """
-        Parses a sitemap and returns a list of URLs and a list of nested sitemaps.
-        """
+        """解析 sitemap 並回傳網址列表與巢狀 sitemap 列表。"""
         urls = []
         nested_sitemaps = []
         try:
@@ -40,30 +37,27 @@ class SitemapParser:
                     print(f"Error fetching sitemap {sitemap_url}: {result.error_message}")
                     return urls, nested_sitemaps
                 
-                # Parse the XML content to find URLs
+                # 使用安全的 XML 解析取代正則
                 content = result.html
-                
-                # Simple XML parsing to find <loc> tags
-                import re
-                loc_pattern = r'<loc>(.*?)</loc>'
-                loc_matches = re.findall(loc_pattern, content, re.IGNORECASE)
-                
-                for url in loc_matches:
-                    url = url.strip()
-                    parsed_url = urlparse(url)
-                    if url.endswith(".xml") or "sitemap" in parsed_url.path.lower():
-                        nested_sitemaps.append(url)
-                    else:
-                        urls.append(url)
+                try:
+                    root = ET.fromstring(content)
+                    for loc in root.iter():
+                        if loc.tag.endswith("loc") and loc.text:
+                            url = loc.text.strip()
+                            parsed_url = urlparse(url)
+                            if url.endswith(".xml") or "sitemap" in parsed_url.path.lower():
+                                nested_sitemaps.append(url)
+                            else:
+                                urls.append(url)
+                except ET.ParseError as e:
+                    print(f"解析 sitemap 失敗: {e}")
         except Exception as e:
             print(f"Error fetching sitemap {sitemap_url}: {e}")
 
         return urls, nested_sitemaps
 
     async def _is_sitemap_by_content(self, url: str) -> bool:
-        """
-        Fetches the URL and checks its content to determine if it's a sitemap.
-        """
+        """抓取 URL 並檢查內容以判斷是否為 sitemap。"""
         try:
             # First do a HEAD request to check content type
             response = requests.head(url, allow_redirects=True, timeout=5)
@@ -77,11 +71,15 @@ class SitemapParser:
                     result = await crawler.arun(url, timeout=10000)
                     
                     if result.success:
-                        # Simple check for XML sitemap structure
-                        content = result.html.lower()
-                        if '<urlset' in content or '<sitemapindex' in content:
-                            print(f"Success checking sitemap content for {url}")
-                            return True
+                        # 解析內容並檢查根標籤
+                        try:
+                            root = ET.fromstring(result.html)
+                            tag = root.tag.lower()
+                            if tag.endswith("urlset") or tag.endswith("sitemapindex"):
+                                print(f"Success checking sitemap content for {url}")
+                                return True
+                        except ET.ParseError:
+                            pass
                 
             # If it's not XML content type, it's unlikely to be a sitemap
             return False
@@ -101,12 +99,7 @@ class SitemapParser:
             return False
 
     async def discover_urls_from_sitemaps(self, domain: str):
-        """
-        Discovers all URLs from the sitemaps of a domain.
-        Yields discovered items:
-        - ('sitemap', sitemap_url) for each sitemap that is successfully parsed.
-        - ('urls', list_of_urls) for all URLs found within that sitemap.
-        """
+        """從目標網站的 sitemap 中發現所有 URL。\n        依序產出：\n        - ('sitemap', sitemap_url) 每個成功解析的 sitemap URL。\n        - ('urls', list_of_urls) 該 sitemap 中所有找到的網址。"""
         sitemaps_to_parse = self.get_sitemaps_from_robots(domain)
         if not sitemaps_to_parse:
             # If no sitemaps in robots.txt, try the default sitemap.xml
