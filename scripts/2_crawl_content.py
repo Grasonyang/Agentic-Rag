@@ -5,7 +5,6 @@
 
 import argparse
 import asyncio
-import logging
 import os
 import sys
 
@@ -19,17 +18,12 @@ from spider.utils.connection_manager import EnhancedConnectionManager
 from spider.utils.database_manager import EnhancedDatabaseManager
 from spider.utils.rate_limiter import AdaptiveRateLimiter
 from spider.utils.retry_manager import RetryManager
+from spider.utils.enhanced_logger import get_spider_logger
 
 # 載入環境設定
 load_config()
 
-# 設定日誌格式
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(levelname)s - [%(name)s] - %(message)s",
-    stream=sys.stdout,
-)
-logger = logging.getLogger(__name__)
+logger = get_spider_logger("crawl")
 
 
 async def main(batch_size: int) -> None:
@@ -40,6 +34,7 @@ async def main(batch_size: int) -> None:
         crawler = ProgressiveCrawler(scheduler, cm, RetryManager(), batch_size=batch_size)
         processed = await crawler.crawl_batch()
         logger.info(f"本次處理 {processed} 個 URL")
+        logger.log_statistics()
 
 
 if __name__ == "__main__":

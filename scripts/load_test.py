@@ -28,6 +28,7 @@ from spider.crawlers.progressive_crawler import ProgressiveCrawler
 from spider.utils.connection_manager import EnhancedConnectionManager
 from spider.utils.retry_manager import RetryManager
 from spider.utils.rate_limiter import RateLimiter, RateLimitConfig
+from spider.utils.enhanced_logger import get_spider_logger
 
 
 class InMemoryDBManager:
@@ -166,16 +167,17 @@ async def main() -> None:
     error_rate = db_manager.error_count / processed if processed else 0.0
     throughput = processed / elapsed if elapsed else 0.0
 
-    print(f"總處理數量: {processed}")
-    print(f"總耗時: {elapsed:.2f} 秒")
-    print(f"記憶體峰值: {peak / 1024 / 1024:.2f} MB")
-    print(f"錯誤率: {error_rate:.4f}")
-    print(f"吞吐量: {throughput:.2f} URLs/秒")
+    logger = get_spider_logger("load_test")
+    logger.info(
+        f"處理 {processed} 筆，耗時 {elapsed:.2f} 秒，"
+        f"記憶體峰值 {peak / 1024 / 1024:.2f} MB，"
+        f"錯誤率 {error_rate:.4f}，吞吐量 {throughput:.2f} URLs/秒"
+    )
 
     if throughput < args.min_throughput:
-        print("吞吐量不足，建議評估改採 Redis 佇列或分散式 worker")
+        logger.warning("吞吐量不足，建議評估改採 Redis 佇列或分散式 worker")
     else:
-        print("吞吐量良好")
+        logger.info("吞吐量良好")
 
 
 if __name__ == "__main__":
