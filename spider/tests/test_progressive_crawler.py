@@ -56,10 +56,11 @@ class FakeScheduler:
         self.urls = urls
         self.statuses = {u.id: CrawlStatus.PENDING for u in urls}
 
-    async def dequeue_batch(self, batch_size):
+    async def dequeue_stream(self, batch_size):
         pending = [u for u in self.urls if self.statuses[u.id] == CrawlStatus.PENDING]
         pending.sort(key=lambda u: u.last_crawl_at or datetime.min)
-        return pending[:batch_size]
+        for u in pending[:batch_size]:
+            yield u
 
     async def update_status(self, uid, status, error_message=None):  # noqa: ANN001, D401
         """更新狀態"""

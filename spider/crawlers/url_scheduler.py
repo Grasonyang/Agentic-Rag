@@ -99,15 +99,15 @@ class URLScheduler:
 
         return total
 
-    async def dequeue_batch(self, batch_size: int) -> List[DiscoveredURLModel]:
-        """取出一批待處理的 URL
+    async def dequeue_stream(self, batch_size: int):
+        """以串流方式取出待處理的 URL"""
 
-        Args:
-            batch_size: 批次大小
-        Returns:
-            待處理的 URL 模型列表
-        """
-        return await self.db_manager.get_pending_urls(batch_size)
+        while True:
+            batch = await self.db_manager.get_pending_urls(batch_size)
+            if not batch:
+                break
+            for item in batch:
+                yield item
 
     async def update_status(self, url_id: str, status: CrawlStatus, error_message: str | None = None) -> bool:
         """更新指定 URL 的狀態"""
