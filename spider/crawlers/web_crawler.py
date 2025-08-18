@@ -1,4 +1,4 @@
-"""WebCrawler - 基於 crawl4ai 的高性能爬蟲
+"""WebCrawler - 簡化版的網頁爬蟲
 
 範例使用:
     import asyncio
@@ -8,6 +8,7 @@
     async def demo():
         logger = get_spider_logger("demo")
         crawler = WebCrawler(headless=True, wait_time=3000, timeout=30000)
+        crawler = WebCrawler()
         result = await crawler.crawl("https://example.com")
         if result["success"]:
             logger.info(result["title"])
@@ -15,16 +16,13 @@
     asyncio.run(demo())
 
 參數說明:
-    headless (bool): 是否使用無頭瀏覽器模式
-    wait_time (int): 等待 JavaScript 執行的時間 (毫秒)
-    timeout (int): 單頁面載入的最大等待時間 (毫秒)
     connection_manager (EnhancedConnectionManager | None): HTTP 連線管理器
 """
 
 from typing import Dict, Optional
-from crawl4ai import AsyncWebCrawler
+from lxml import html as lxml_html
+
 from .base_crawler import BaseCrawler
-from spider.crawlers.robots_handler import apply_to_crawl4ai
 from spider.utils.connection_manager import EnhancedConnectionManager
 from spider.utils.rate_limiter import AdaptiveRateLimiter
 from spider.utils.enhanced_logger import get_spider_logger
@@ -33,36 +31,25 @@ logger = get_spider_logger("web_crawler")  # 取得爬蟲日誌記錄器
 
 
 class WebCrawler(BaseCrawler):
-    """基於 crawl4ai 的高性能爬蟲"""
+    """簡化版爬蟲，透過 HTTP 取得內容"""
 
     def __init__(
         self,
-        headless: bool = True,
-        wait_time: int = 0,
-        timeout: int = 10000,
         connection_manager: Optional[EnhancedConnectionManager] = None,
     ) -> None:
         cm = connection_manager or EnhancedConnectionManager(
             rate_limiter=AdaptiveRateLimiter()
         )
-        apply_to_crawl4ai(cm)  # 先行取得 robots 設定
         super().__init__(cm)
-        self.headless = headless
-        self.wait_time = wait_time
-        self.timeout = timeout
 
     async def crawl(self, url: str) -> Dict[str, str]:
         """爬取指定 URL 並回傳內容與標題"""
-        async with AsyncWebCrawler(headless=self.headless) as crawler:
-            self.apply_robots(crawler)
-            try:
-                result = await crawler.arun(url, wait_for=self.wait_time, timeout=self.timeout)
-                if result.success:
-                    return {
-                        "success": True,
-                        "title": getattr(result, "title", ""),
-                        "content": result.html,
-                    }
-                return {"success": False, "error": result.error_message}
-            except Exception as e:  # noqa: BLE001
-                return self._error(e)
+        result = await self.fetch_html(url)
+        if not result["success"]:
+            return result
+
+        html = result["html"]
+        tree = lxml_html.fromstring(html)
+        title = (tree.findtext(".//title") or "").strip()
+
+        return {"success": True, "title": title, "content": html}
