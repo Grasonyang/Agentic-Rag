@@ -13,9 +13,18 @@ from importlib import import_module
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from scripts.utils import get_script_logger
+from spider.crawlers.robots_handler import (
+    fetch_and_parse,
+    get_crawl_delay,
+    is_allowed,
+)
+from spider.utils.enhanced_logger import spider_logger
 
 # 建立日誌器
 logger = get_script_logger("auto_pipeline")
+
+# 允許的最大 crawl-delay 秒數
+MAX_CRAWL_DELAY = 30
 
 
 def import_script(name: str):
@@ -27,19 +36,33 @@ async def run_once(domain: str, batch_size: int):
     """執行一次完整流程"""
     logger.info("開始執行一次管線流程")
 
-    # discover
-    discover = import_script("1_discover_urls")
-    await discover.main([domain])
+    # 先檢查 robots.txt 規範
+    await fetch_and_parse(domain)
+    root_url = domain if domain.startswith("http") else f"https://{domain}/"
+    if not await is_allowed(root_url):
+        logger.warning("該網站禁止爬取，終止流程")
+        return
+    crawl_delay = await get_crawl_delay(domain)
+    if crawl_delay and crawl_delay > MAX_CRAWL_DELAY:
+        logger.warning(
+            f"crawl-delay {crawl_delay}s 過大，終止流程"
+        )
+        return
 
-    # crawl
+    # discover 與 crawl 併發執行
+    discover = import_script("1_discover_urls")
     crawl = import_script("2_crawl_content")
-    await crawl.main(batch_size)
+    await asyncio.gather(
+        discover.main([domain]),
+        crawl.main(batch_size),
+    )
 
     # embed
     embed = import_script("3_process_and_embed")
     embed.main(batch_size)
 
     logger.info("本輪流程完成")
+    spider_logger.log_statistics()
 
 
 async def schedule_loop(domain: str, batch_size: int, interval: int):
