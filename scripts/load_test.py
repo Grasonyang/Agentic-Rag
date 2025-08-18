@@ -17,7 +17,7 @@ import os
 import sys
 import time
 import tracemalloc
-from typing import Dict, List
+from typing import Dict, Iterable, List
 
 # 調整匯入路徑，確保能匯入專案模組
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -99,9 +99,10 @@ class MockConnectionManager(EnhancedConnectionManager):
         return DummyResponse()
 
 
-def generate_urls(total: int) -> List[str]:
-    """產生模擬 URL 清單"""
-    return [f"http://example.com/page/{i}" for i in range(total)]
+def generate_urls(total: int) -> Iterable[str]:
+    """產生模擬 URL 產生器"""
+    for i in range(total):
+        yield f"http://example.com/page/{i}"
 
 
 def parse_args() -> argparse.Namespace:
@@ -139,12 +140,8 @@ async def main() -> None:
     async with InMemoryDBManager() as db_manager:
         scheduler = URLScheduler(db_manager)
 
-        # 批次寫入 URL，避免一次建立過多物件佔用記憶體
-        urls = generate_urls(args.total)
-        CHUNK = 1000
-        for i in range(0, len(urls), CHUNK):
-            chunk = urls[i : i + CHUNK]
-            await scheduler.enqueue_urls(chunk)
+        # 直接以產生器寫入大量 URL，由排程器自行批次處理
+        await scheduler.enqueue_urls(generate_urls(args.total))
 
         crawler = ProgressiveCrawler(
             scheduler,

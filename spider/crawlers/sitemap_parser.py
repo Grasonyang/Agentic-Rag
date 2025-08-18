@@ -1,5 +1,7 @@
 from urllib.parse import urljoin, urlparse
 import urllib.robotparser
+import io
+from datetime import datetime
 from spider.utils.connection_manager import EnhancedConnectionManager
 from spider.utils.enhanced_logger import get_spider_logger
 from lxml import etree
@@ -121,12 +123,53 @@ class SitemapParser:
             if sitemap_url in parsed_sitemaps:
                 continue
 
-            urls, nested_sitemaps = await self.parse_sitemap(sitemap_url)
             parsed_sitemaps.add(sitemap_url)
 
-            # 將解析出的 URL 以批次寫入排程器，避免一次載入全部
-            for i in range(0, len(urls), batch_size):
-                batch = urls[i : i + batch_size]
-                await scheduler.enqueue_urls(batch)
+            try:
+                response = await self.connection_manager.get(sitemap_url)
+                content = await response.text()
 
-            sitemaps_to_parse.extend(nested_sitemaps)
+                batch = []
+                nested_sitemaps: list[str] = []
+
+                # 逐項解析，解析後立即寫入排程器，避免累積於記憶體
+                for _, elem in etree.iterparse(io.BytesIO(content.encode()), events=("end",)):
+                    tag = etree.QName(elem.tag).localname
+                    if tag == "url":
+                        loc = elem.find("{*}loc")
+                        if loc is None or not loc.text:
+                            elem.clear()
+                            continue
+                        url = loc.text.strip()
+                        priority_el = elem.find("{*}priority")
+                        lastmod_el = elem.find("{*}lastmod")
+                        priority = (
+                            float(priority_el.text)
+                            if priority_el is not None and priority_el.text
+                            else None
+                        )
+                        lastmod = None
+                        if lastmod_el is not None and lastmod_el.text:
+                            try:
+                                lastmod = datetime.fromisoformat(
+                                    lastmod_el.text.replace("Z", "+00:00")
+                                )
+                            except ValueError:
+                                lastmod = None
+
+                        batch.append({"url": url, "priority": priority, "lastmod": lastmod})
+                        if len(batch) >= batch_size:
+                            await scheduler.enqueue_urls(batch)
+                            batch.clear()
+                    elif tag == "sitemap":
+                        loc = elem.find("{*}loc")
+                        if loc is not None and loc.text:
+                            nested_sitemaps.append(loc.text.strip())
+                    elem.clear()
+
+                if batch:
+                    await scheduler.enqueue_urls(batch)
+
+                sitemaps_to_parse.extend(nested_sitemaps)
+            except Exception as e:  # noqa: BLE001
+                logger.error(f"解析 sitemap {sitemap_url} 時發生錯誤: {e}")
