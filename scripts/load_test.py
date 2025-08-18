@@ -45,9 +45,10 @@ class InMemoryDBManager:
         """不需特別清理資源"""
         return False
 
-    async def bulk_create_discovered_urls(
+    async def bulk_insert_discovered_urls(
         self, models: List[DiscoveredURLModel]
     ) -> int:
+        """模擬批次寫入資料庫"""
         for m in models:
             self.urls[m.id] = m
         return len(models)
@@ -146,8 +147,8 @@ async def main() -> None:
 
         crawler = ProgressiveCrawler(
             scheduler,
-            connection_manager,
             retry_manager,
+            connection_manager,
             batch_size=args.batch_size,
             concurrency=args.concurrency,
         )
