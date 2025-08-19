@@ -15,6 +15,7 @@ from spider.utils.enhanced_logger import get_spider_logger
 from spider.utils.rate_limiter import AdaptiveRateLimiter
 from .url_scheduler import URLScheduler
 from .robots_handler import fetch_and_parse, get_crawl_delay
+from spider.workers.chunk_embed_worker import ChunkEmbedWorker
 
 
 class ProgressiveCrawler:
@@ -27,6 +28,7 @@ class ProgressiveCrawler:
         connection_manager: Optional[EnhancedConnectionManager] = None,
         batch_size: int = 10,
         concurrency: int = 5,
+        worker: Optional[ChunkEmbedWorker] = None,
     ) -> None:
         """初始化爬蟲
 
@@ -46,16 +48,17 @@ class ProgressiveCrawler:
         self.batch_size = batch_size
         self.concurrency = concurrency
         self.logger = get_spider_logger("progressive_crawler")
+        self.worker = worker
 
-    async def _fetch_with_retry(self, url: str) -> None:
-        """使用 RetryManager 進行帶退避的抓取"""
+    async def _fetch_with_retry(self, url: str) -> str:
+        """使用 RetryManager 進行帶退避的抓取並回傳內容"""
         attempt = 0
         while True:
             try:
                 response = await self.connection_manager.get(url)
                 # 讀取內容以確保請求完成
-                await response.text()
-                return
+                content = await response.text()
+                return content
             except Exception as e:  # noqa: BLE001
                 if self.retry_manager.should_retry(e, attempt):
                     delay = self.retry_manager.calculate_delay(attempt)
@@ -68,12 +71,31 @@ class ProgressiveCrawler:
                     continue
                 raise
 
+    async def _save_raw_page(self, url_id: str, content: str) -> None:
+        """將原始內容寫入 raw_pages 資料表"""
+        db_manager = getattr(self.scheduler, "db_manager", None)
+        if not db_manager:
+            return
+        sql = "INSERT INTO raw_pages (url_id, content, created_at) VALUES (%s, %s, NOW())"
+        await db_manager._execute_async_with_retry(
+            lambda: db_manager._db_ops.client.execute_query(
+                sql, (url_id, content), fetch=False
+            ),
+            "insert_raw_page",
+        )
+
     async def _process_url(self, url_model) -> None:
         """處理單一 URL"""
         await self.scheduler.update_status(url_model.id, CrawlStatus.CRAWLING)
         try:
-            await self._fetch_with_retry(url_model.url)
-            await self.scheduler.update_status(url_model.id, CrawlStatus.COMPLETED)
+            content = await self._fetch_with_retry(url_model.url)
+            await self._save_raw_page(url_model.id, content)
+            await self.scheduler.update_status(url_model.id, CrawlStatus.CRAWLED)
+            if self.worker:
+                task = asyncio.create_task(
+                    self.worker.process(url_model.id, content)
+                )
+                self.worker.add_task(task)
         except Exception as e:  # noqa: BLE001
             # 更新為錯誤狀態
             await self.scheduler.update_status(
