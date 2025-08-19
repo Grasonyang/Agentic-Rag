@@ -19,8 +19,9 @@ agentic_rag/
 ```
 
 ## ⚙️ 環境設定
-1. 複製範本：`cp .env.template .env`
-2. 編輯 `.env`，設定 PostgreSQL 連線資訊與模型名稱，例如：
+1. 安裝依賴：`pip install -r requirements.txt`
+2. 複製範本：`cp .env.template .env`
+3. 編輯 `.env`，設定 PostgreSQL 連線資訊與模型名稱，例如：
    ```env
    DB_HOST=localhost
    DB_PORT=5432
@@ -91,7 +92,7 @@ make migrate-supabase
 
 ```bash
 cp .env.template .env
-make install
+pip install -r requirements.txt
 ```
 
 完成後執行：
