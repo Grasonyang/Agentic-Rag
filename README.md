@@ -41,6 +41,15 @@ agentic_rag/
 | `make search QUERY="關鍵問題"` | 進行語義搜尋 |
 | `make migrate-supabase` | 將 PostgreSQL 資料遷移至 Supabase |
 
+## 🔁 一鍵全自動流程
+若想從發現到向量化一次完成，可執行下列指令：
+
+```bash
+python -m scripts.auto_pipeline --domain https://example.com --batch_size 100
+```
+
+如需長時間執行，可加上 `--schedule 3600` 以每小時重新流程。
+
 ## 🪵 日誌
 執行上述指令或單獨呼叫腳本時，系統會在 `logs/` 目錄生成 `<腳本名稱>.log` 等日誌檔。
 例如可透過以下指令即時查看執行狀況：
