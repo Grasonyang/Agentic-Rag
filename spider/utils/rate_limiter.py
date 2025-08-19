@@ -274,6 +274,19 @@ class RateLimiter:
             del self.domain_limits[domain]
             logger.info(f"已重置域名 {domain} 的限制信息")
 
+    def apply_to_crawl4ai(self, crawler):
+        """將限速器套用至 crawl4ai 的工作階段"""
+
+        async def _before_request(url: str, request_kwargs: dict):
+            """請求前等待可用令牌"""
+            domain = urlparse(url).netloc
+            await self.acquire_async(domain)
+
+        if hasattr(crawler, "crawler_strategy") and hasattr(crawler.crawler_strategy, "set_hook"):
+            crawler.crawler_strategy.set_hook("before_request", _before_request)
+
+        return self
+
 class AdaptiveRateLimiter(RateLimiter):
     """自適應速率限制器，根據服務器響應自動調整速率"""
     
@@ -340,15 +353,15 @@ class AdaptiveRateLimiter(RateLimiter):
                 self.adjust_rate(self.config.requests_per_second * 0.7)
                 self.report_failure(domain, severe=True)
 
-    def apply_to_crawl4ai(self, session):
-        """將限速器套用至 crawl4ai session"""
+    def apply_to_crawl4ai(self, crawler):
+        """將限速器套用至 crawl4ai 工作階段"""
 
         async def _before_request(url: str, request_kwargs: dict):
             """請求前取得令牌並檢查 robots 延遲"""
             domain = urlparse(url).netloc
 
             # 若 robots_handler 提供 crawl-delay，調整最小等待時間
-            robots_handler = getattr(session, "robots_handler", None)
+            robots_handler = getattr(crawler, "robots_handler", None)
             if robots_handler:
                 try:
                     crawl_delay = None
@@ -382,10 +395,10 @@ class AdaptiveRateLimiter(RateLimiter):
             self.record_response(domain, duration, False)
 
         # 註冊 crawl4ai 的 hooks
-        if hasattr(session, "crawler_strategy") and hasattr(session.crawler_strategy, "set_hook"):
-            session.crawler_strategy.set_hook("before_request", _before_request)
-            session.crawler_strategy.set_hook("after_request", _after_request)
-            session.crawler_strategy.set_hook("on_error", _on_error)
+        if hasattr(crawler, "crawler_strategy") and hasattr(crawler.crawler_strategy, "set_hook"):
+            crawler.crawler_strategy.set_hook("before_request", _before_request)
+            crawler.crawler_strategy.set_hook("after_request", _after_request)
+            crawler.crawler_strategy.set_hook("on_error", _on_error)
 
         return self
 

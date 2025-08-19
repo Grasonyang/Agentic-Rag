@@ -302,7 +302,22 @@ class EnhancedConnectionManager:
     async def post(self, url: str, **kwargs) -> aiohttp.ClientResponse:
         """POST 請求"""
         return await self.request("POST", url, **kwargs)
-    
+
+    def create_crawler(self, *args, **kwargs):
+        """建立 AsyncWebCrawler 並自動掛載限速 hook"""
+        try:
+            from crawl4ai import AsyncWebCrawler
+        except Exception as e:  # noqa: BLE001
+            raise ImportError("未安裝 crawl4ai，無法建立 AsyncWebCrawler") from e
+
+        crawler = AsyncWebCrawler(*args, **kwargs)
+
+        # 若限速器支援 crawl4ai，建立後立即掛載
+        if hasattr(self._rate_limiter, "apply_to_crawl4ai"):
+            self._rate_limiter.apply_to_crawl4ai(crawler)
+
+        return crawler
+
     async def close(self):
         """關閉連接管理器"""
         if self._session:
