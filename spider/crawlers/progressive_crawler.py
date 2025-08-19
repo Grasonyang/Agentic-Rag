@@ -12,7 +12,7 @@ from database.models import CrawlStatus
 from spider.utils.connection_manager import EnhancedConnectionManager
 from spider.utils.retry_manager import RetryManager
 from spider.utils.enhanced_logger import get_spider_logger
-from spider.utils.rate_limiter import AdaptiveRateLimiter
+from spider.utils.rate_limiter import AdaptiveRateLimiter, RateLimiter
 from .url_scheduler import URLScheduler
 from .robots_handler import fetch_and_parse, get_crawl_delay
 
@@ -25,6 +25,7 @@ class ProgressiveCrawler:
         scheduler: URLScheduler,
         retry_manager: RetryManager,
         connection_manager: Optional[EnhancedConnectionManager] = None,
+        rate_limiter: Optional[RateLimiter] = None,
         batch_size: int = 10,
         concurrency: int = 5,
     ) -> None:
@@ -34,14 +35,22 @@ class ProgressiveCrawler:
             scheduler: URL 排程器
             retry_manager: 重試管理器
             connection_manager: 連線管理器
+            rate_limiter: 速率限制器
             batch_size: 每次抓取的 URL 數量
             concurrency: 同時處理的工作數
         """
-        cm = connection_manager or EnhancedConnectionManager(
-            rate_limiter=AdaptiveRateLimiter()
-        )
+        rl = rate_limiter or AdaptiveRateLimiter()
+
+        if connection_manager is None:
+            cm = EnhancedConnectionManager(rate_limiter=rl)
+        else:
+            cm = connection_manager
+            # 若外部未附帶限速器，套用預設實例
+            if getattr(cm, "_rate_limiter", None) is None:
+                cm._rate_limiter = rl
         self.scheduler = scheduler
         self.connection_manager = cm
+        self.rate_limiter = getattr(cm, "_rate_limiter", rl)
         self.retry_manager = retry_manager
         self.batch_size = batch_size
         self.concurrency = concurrency
@@ -109,10 +118,11 @@ class ProgressiveCrawler:
                     # 下載並解析該網域的 robots.txt
                     await fetch_and_parse(domain, self.connection_manager)
                     crawl_delay = await get_crawl_delay(domain, self.connection_manager)
-                    if crawl_delay:
-                        rl = getattr(self.connection_manager, "_rate_limiter", None)
-                        if rl:
-                            rl.config.min_delay = max(rl.config.min_delay, float(crawl_delay))
+                    if crawl_delay and self.rate_limiter:
+                        self.rate_limiter.config.min_delay = max(
+                            self.rate_limiter.config.min_delay,
+                            float(crawl_delay),
+                        )
                 except Exception as e:  # noqa: BLE001
                     # robots 取得失敗時記錄警告但不中斷流程
                     self.logger.warning(f"無法下載 {domain} 的 robots.txt: {e}")

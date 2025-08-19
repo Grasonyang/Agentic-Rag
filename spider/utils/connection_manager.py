@@ -176,14 +176,10 @@ class EnhancedConnectionManager:
             raise_for_status=False
         )
 
-        # 若限速器提供 crawl4ai 套用方法，則在此註冊 hook
-        if hasattr(self._rate_limiter, "apply_to_crawl4ai"):
-            self._rate_limiter.apply_to_crawl4ai(self._session)
-
         self._stats["session_recreated"] += 1
         self.logger.info("HTTP 會話已創建")
         return self._session
-    
+
     async def _recreate_session_if_needed(self):
         """如有需要重新創建會話"""
         if not self._session or self._session.closed:
@@ -199,6 +195,14 @@ class EnhancedConnectionManager:
             return True
         
         return False
+
+    def apply_rate_limiter(self, session):
+        """將限速器掛載至支援 `before_request` 的工作階段"""
+        if hasattr(session, "before_request"):
+            limiter = self._rate_limiter
+
+            session.before_request(lambda: limiter.acquire_async())
+        return session
     
     async def request(self, method: str, url: str, **kwargs) -> aiohttp.ClientResponse:
         """執行HTTP請求"""
@@ -312,11 +316,8 @@ class EnhancedConnectionManager:
 
         crawler = AsyncWebCrawler(*args, **kwargs)
 
-        # 若限速器支援 crawl4ai，建立後立即掛載
-        if hasattr(self._rate_limiter, "apply_to_crawl4ai"):
-            self._rate_limiter.apply_to_crawl4ai(crawler)
-
-        return crawler
+        # 建立後立即掛載限速器
+        return self.apply_rate_limiter(crawler)
 
     async def close(self):
         """關閉連接管理器"""
