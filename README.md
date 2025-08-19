@@ -76,5 +76,7 @@ make install
 make test
 ```
 
+上述指令會一次跑完 `scripts/`、`spider/tests` 等目錄的所有測試。
+
 ---
 如有建議或問題，歡迎提出 Issue，一同改進這個實驗專案。
