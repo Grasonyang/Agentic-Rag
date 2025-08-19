@@ -7,7 +7,6 @@
 from typing import Iterable, List, Any, Optional
 from datetime import datetime
 from urllib.parse import urlparse
-from asyncio import Queue
 
 from database.models import DiscoveredURLModel, CrawlStatus
 from spider.utils.database_manager import EnhancedDatabaseManager
@@ -20,34 +19,41 @@ class URLScheduler:
         # 資料庫管理器
         self.db_manager = db_manager
         self.batch_size = batch_size
-        self.url_queue: Queue[dict] = Queue()
+        # 暫存待寫入的 URL 模型
+        self._buffer: List[DiscoveredURLModel] = []
 
     def get_domain(self, url: str) -> str:
         return urlparse(url).netloc
 
-    async def add_url(self, url: str, last_modified: Optional[datetime] = None, priority: float = 0.5) -> None:
-        url_info = {
-            "url": url,
-            "domain": self.get_domain(url),
-            "last_modified": last_modified,
-            "priority": priority,
-            "crawl_status": CrawlStatus.PENDING.value
-        }
-        await self.url_queue.put(url_info)
-        if self.url_queue.qsize() >= self.batch_size:
+    async def add_url(
+        self,
+        url: str,
+        last_modified: Optional[datetime] = None,
+        priority: float = 0.5,
+    ) -> None:
+        """加入單一 URL，使用批次寫入避免逐筆 insert"""
+
+        model = DiscoveredURLModel(
+            url=url,
+            domain=self.get_domain(url),
+            lastmod=last_modified,
+            priority=priority,
+            crawl_status=CrawlStatus.PENDING.value,
+        )
+        self._buffer.append(model)
+
+        # 累積到指定批次大小時寫入資料庫
+        if len(self._buffer) >= self.batch_size:
             await self.flush_to_db()
 
     async def flush_to_db(self) -> None:
-        batch = []
-        while not self.url_queue.empty() and len(batch) < self.batch_size:
-            batch.append(self.url_queue.get_nowait())
-        
-        if batch:
-            models = [DiscoveredURLModel(**item) for item in batch]
-            # 使用批次插入加速寫入
-            await self.db_manager.bulk_insert_discovered_urls(models)
+        """將緩衝區的 URL 批次寫入資料庫"""
+        if self._buffer:
+            await self.db_manager.bulk_insert_discovered_urls(self._buffer)
+            self._buffer.clear()
 
     async def close(self) -> None:
+        """關閉排程器前確保資料已落盤"""
         await self.flush_to_db()
 
     async def enqueue_urls(self, urls: Iterable[Any], batch_size: int = 1000) -> int:
