@@ -13,7 +13,7 @@ import logging
 from contextlib import asynccontextmanager
 
 from spider.utils.enhanced_logger import get_spider_logger
-from spider.utils.rate_limiter import RateLimiter, AdaptiveRateLimiter, RateLimitConfig
+from spider.utils.rate_limiter import RateLimiter, RateLimitConfig
 
 
 @dataclass

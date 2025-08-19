@@ -10,7 +10,6 @@ spider/
 ├── crawlers/                   # 爬蟲實現
 │   ├── __init__.py
 │   ├── web_crawler.py          # 基於 crawl4ai 的高性能爬蟲
-│   ├── simple_crawler.py       # 簡化版爬蟲，整合資料庫操作
 │   ├── sitemap_parser.py       # Sitemap 解析和 URL 提取
 │   ├── url_scheduler.py        # URL 排程器
 │   └── progressive_crawler.py  # 漸進式爬蟲
@@ -44,15 +43,6 @@ spider/
 - ⚡ 異步併發處理
 - 🛡️ 內建反反爬蟲機制
 - 📊 詳細的性能監控
-
-#### SimpleWebCrawler - 整合爬蟲
-簡化版爬蟲，專為與資料庫深度整合而設計。
-
-**特點:**
-- 🗄️ 直接資料庫整合
-- 📝 自動內容去重
-- 🏷️ 智能標題提取
-- 📈 爬取狀態追蹤
 
 #### SitemapParser - Sitemap 解析器
 專門處理 Sitemap 文件的解析和URL發現。
@@ -129,18 +119,17 @@ chunks = chunker.chunk_text("很長的文章內容...")
 
 ```python
 import asyncio
-from spider.crawlers.simple_crawler import SimpleWebCrawler
+from spider.crawlers.web_crawler import WebCrawler
 
 async def basic_crawl():
-    crawler = SimpleWebCrawler()
-    
+    crawler = WebCrawler()
+
     # 爬取單一 URL
-    result = await crawler.crawl_single("https://example.com")
-    
+    result = await crawler.crawl("https://example.com")
+
     if result['success']:
         print(f"標題: {result['title']}")
         print(f"內容長度: {len(result['content'])}")
-        print(f"文章 ID: {result['article_id']}")
     else:
         print(f"爬取失敗: {result['error']}")
 
@@ -152,28 +141,30 @@ asyncio.run(basic_crawl())
 
 ```python
 async def batch_crawl():
-    crawler = SimpleWebCrawler()
-    
+    crawler = WebCrawler()
+
     urls = [
         "https://example1.com",
-        "https://example2.com", 
+        "https://example2.com",
         "https://example3.com"
     ]
-    
-    # 批量爬取
-    results = await crawler.crawl_batch(urls, max_concurrent=3)
-    
+
+    # 逐一爬取
+    results = []
+    for u in urls:
+        results.append(await crawler.crawl(u))
+
     successful = [r for r in results if r['success']]
     failed = [r for r in results if not r['success']]
-    
+
     print(f"成功: {len(successful)}, 失敗: {len(failed)}")
-    
+
     # 顯示結果統計
     for result in successful:
-        print(f"✅ {result['url']} - {result['title'][:50]}...")
-    
+        print(f"✅ {result['title'][:50]}...")
+
     for result in failed:
-        print(f"❌ {result['url']} - {result['error']}")
+        print(f"❌ {result['error']}")
 
 asyncio.run(batch_crawl())
 ```
@@ -277,7 +268,9 @@ print(f"句子分塊: {len(sentence_chunks)} 塊")
 
 ```python
 from spider.utils.retry_manager import RetryManager
-from spider.crawlers.web_crawler import CrawlError
+from spider.crawlers.web_crawler import WebCrawler, CrawlError
+
+crawler = WebCrawler()
 
 # 創建重試管理器
 retry_manager = RetryManager(
@@ -295,7 +288,7 @@ async def robust_crawl(url):
         exclude_exceptions=(ValueError,)  # 不重試的例外
     )
     async def _crawl():
-        return await crawler.crawl_single(url)
+        return await crawler.crawl(url)
     
     try:
         return await _crawl()
@@ -349,7 +342,7 @@ class CustomWebCrawler(WebCrawler):
 
 # 使用自定義爬蟲
 custom_crawler = CustomWebCrawler()
-result = await custom_crawler.crawl_single("https://special-site.com/article")
+result = await custom_crawler.crawl("https://special-site.com/article")
 ```
 
 ### 2. 自定義分塊器
@@ -470,14 +463,15 @@ class AdaptiveRateLimiter(RateLimiter):
 
 # 使用自適應限速器
 adaptive_limiter = AdaptiveRateLimiter(initial_rps=2.0)
+crawler = WebCrawler()
 
 async def crawl_with_adaptive_rate(url):
     await adaptive_limiter.acquire()
-    
+
     start_time = time.time()
-    result = await crawler.crawl_single(url)
+    result = await crawler.crawl(url)
     response_time = time.time() - start_time
-    
+
     adaptive_limiter.record_response_time(response_time)
     return result
 ```
@@ -518,7 +512,7 @@ crawler.set_cookies(cookies)
 
 **解決方案**:
 ```python
-# 使用 WebCrawler 而非 SimpleWebCrawler
+# 使用 WebCrawler
 from spider.crawlers.web_crawler import WebCrawler
 
 crawler = WebCrawler(
@@ -537,22 +531,26 @@ await crawler.wait_for_element("div.content", timeout=10000)
 
 **解決方案**:
 ```python
+from spider.crawlers.web_crawler import WebCrawler
+
 # 1. 限制併發數
-crawler = SimpleWebCrawler(max_concurrent=3)
+crawler = WebCrawler()
 
 # 2. 定期清理
 async def crawl_with_cleanup(urls, batch_size=100):
     for i in range(0, len(urls), batch_size):
         batch = urls[i:i+batch_size]
-        results = await crawler.crawl_batch(batch)
-        
+        results = []
+        for u in batch:
+            results.append(await crawler.crawl(u))
+
         # 處理結果
         process_results(results)
-        
+
         # 強制垃圾回收
         import gc
         gc.collect()
-        
+
         # 短暫休息
         await asyncio.sleep(1)
 ```
