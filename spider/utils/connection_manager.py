@@ -178,6 +178,10 @@ class EnhancedConnectionManager:
 
         self._stats["session_recreated"] += 1
         self.logger.info("HTTP 會話已創建")
+
+        # 於工作階段上掛載限速器
+        self.apply_rate_limiter(self._session)
+
         return self._session
 
     async def _recreate_session_if_needed(self):
@@ -197,11 +201,18 @@ class EnhancedConnectionManager:
         return False
 
     def apply_rate_limiter(self, session):
-        """將限速器掛載至支援 `before_request` 的工作階段"""
-        if hasattr(session, "before_request"):
-            limiter = self._rate_limiter
+        """將限速器掛載至支援 hook 的工作階段"""
+        limiter = self._rate_limiter
 
+        async def _before_request(*args, **kwargs):
+            """於請求前等待令牌"""
+            await limiter.acquire_async()
+
+        if hasattr(session, "before_request"):
             session.before_request(lambda: limiter.acquire_async())
+        elif hasattr(session, "crawler_strategy") and hasattr(session.crawler_strategy, "set_hook"):
+            session.crawler_strategy.set_hook("before_request", _before_request)
+
         return session
     
     async def request(self, method: str, url: str, **kwargs) -> aiohttp.ClientResponse:
