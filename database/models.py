@@ -18,6 +18,7 @@ class CrawlStatus(Enum):
     """爬取狀態枚舉"""
     PENDING = "pending"          # 待爬取
     CRAWLING = "crawling"        # 爬取中
+    CRAWLED = "crawled"          # 已抓取，待處理
     COMPLETED = "completed"      # 成功
     ERROR = "error"              # 失敗
     SKIPPED = "skipped"          # 跳過
