@@ -23,6 +23,7 @@ from spider.utils.connection_manager import EnhancedConnectionManager
 from spider.utils.database_manager import EnhancedDatabaseManager
 from spider.utils.rate_limiter import AdaptiveRateLimiter
 from spider.utils.retry_manager import RetryManager
+from spider.workers.chunk_embed_worker import ChunkEmbedWorker
 from scripts.utils import get_script_logger
 
 # 載入環境設定
@@ -55,14 +56,17 @@ async def main(domain: str, batch_size: int) -> None:
                 return
 
             # 以 batch_size 同時設定批次大小與並行數量
+            worker = ChunkEmbedWorker(scheduler.db_manager)
             crawler = ProgressiveCrawler(
                 scheduler,
                 RetryManager(),
                 cm,
                 batch_size=batch_size,
                 concurrency=batch_size,
+                embed_worker=worker,
             )
             processed = await crawler.crawl_batch()
+            await worker.flush()
             logger.info(f"本次處理 {processed} 個 URL")
             logger.log_statistics()
 

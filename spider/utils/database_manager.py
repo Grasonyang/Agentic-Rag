@@ -247,6 +247,20 @@ class EnhancedDatabaseManager:
             lambda: self._db_ops.update_crawl_status(url_id, status, error_message),
             f"update_crawl_status_{status.value}"
         )
+
+    async def insert_raw_page(self, url_id: str, content: str) -> bool:
+        """寫入原始頁面"""
+        return await self._execute_async_with_retry(
+            lambda: self._db_ops.insert_raw_page(url_id, content),
+            "insert_raw_page",
+        )
+
+    async def insert_embeddings(self, url_id: str, texts: List[str], embeddings: List[List[float]]) -> int:
+        """寫入分塊嵌入"""
+        return await self._execute_async_with_retry(
+            lambda: self._db_ops.insert_embeddings(url_id, texts, embeddings),
+            "insert_embeddings",
+        )
     
     # ==================== 文章管理 ====================
     

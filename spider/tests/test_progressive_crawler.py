@@ -125,8 +125,8 @@ async def test_crawl_batch_order_and_status() -> None:
         "http://example.com/2",
         "http://example.com/1",
     ]
-    assert scheduler.statuses["1"] == CrawlStatus.COMPLETED
-    assert scheduler.statuses["2"] == CrawlStatus.COMPLETED
+    assert scheduler.statuses["1"] == CrawlStatus.CRAWLED
+    assert scheduler.statuses["2"] == CrawlStatus.CRAWLED
 
 
 @pytest.mark.asyncio
