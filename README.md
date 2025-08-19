@@ -18,6 +18,15 @@ agentic_rag/
 └── Makefile         # 常用指令入口
 ```
 
+## 🏗️ 架構
+
+- `spider/crawlers/robots_handler.py`：解析 `robots.txt` 並快取允許與限制規則。
+- `spider/crawlers/url_scheduler.py`：以資料庫維護待爬佇列與狀態。
+- `spider/crawlers/progressive_crawler.py`：依排程批次抓取頁面內容。
+- `spider/workers/chunk_embed_worker.py`：將文章分塊後計算向量嵌入。
+- `embedding/embedding.py`：封裝嵌入模型以產生向量。
+- `api/server.py`：對外提供查詢與回應服務。
+
 ## ⚙️ 環境設定
 1. 複製範本：`cp .env.template .env`
 2. 編輯 `.env`，設定 PostgreSQL 連線資訊與模型名稱，例如：
@@ -73,11 +82,23 @@ python -m scripts.auto_pipeline --domain https://example.com --batch_size 100
 tail -f logs/discover.log
 ```
 
-## 🗺️ 漸進式抓取策略
-1. 任何網站皆須從解析 `robots.txt` 開始，決定允許抓取的路徑。
-2. 解析 sitemap，將新發現的頁面 URL 寫入資料庫。
-3. 依狀態欄位逐批取出待爬取 URL，遇到錯誤會標記並稍後重試。
-4. 將成功抓取的文章分塊並生成向量，方便後續搜尋。
+## 🕷️ 爬蟲流程
+
+```mermaid
+flowchart LR
+    A[解析 robots.txt\nrobots_handler.py]
+    B[URLScheduler\nurl_scheduler.py]
+    C[ProgressiveCrawler\nprogressive_crawler.py]
+    D[分塊/嵌入\nchunk_embed_worker.py & embedding.py]
+    E[API 查詢\napi/server.py]
+    A --> B --> C --> D --> E
+```
+
+1. `spider/crawlers/robots_handler.py` 解析 `robots.txt` 並取得 sitemap。
+2. `spider/crawlers/url_scheduler.py` 將允許的 URL 寫入資料庫等待處理。
+3. `spider/crawlers/progressive_crawler.py` 依排程抓取頁面內容。
+4. `spider/workers/chunk_embed_worker.py` 透過 `embedding/embedding.py` 將內容分塊並計算向量。
+5. `api/server.py` 使用嵌入執行語意搜尋並回應查詢。
 
 ## 🔄 遷移至 Supabase
 若需將資料同步到 Supabase，可執行：
