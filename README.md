@@ -41,6 +41,21 @@ agentic_rag/
 | `make search QUERY="關鍵問題"` | 進行語義搜尋 |
 | `make migrate-supabase` | 將 PostgreSQL 資料遷移至 Supabase |
 
+## 🌐 API 伺服器
+啟動開發伺服器：
+
+```bash
+uvicorn api.server:app --reload
+```
+
+呼叫範例：
+
+```bash
+curl -X POST "http://localhost:8000/rag/query" \
+  -H "Content-Type: application/json" \
+  -d '{"question": "RAG 是什麼？"}'
+```
+
 ## 🔁 一鍵全自動流程
 若想從發現到向量化一次完成，可執行下列指令：
 
