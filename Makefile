@@ -82,8 +82,8 @@ clean:
 	@echo "✅  清理完成。"
 
 test:
-	@echo "🧪  運行專案測試..."
-	@$(PYTHON) -m pytest
+	@echo "🧪  運行專案測試 (含 scripts/ 與 spider/tests)..."
+	@$(PYTHON) -m pytest scripts spider/tests tests
 
 help:
 	@echo "Agentic RAG 系統 - 可用命令:"
