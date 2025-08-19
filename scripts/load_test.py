@@ -8,7 +8,7 @@
 - 模擬 200 OK 回應的抓取
 - 記錄處理時間、記憶體峰值與錯誤率
 - 可調整 batch_size、concurrency 與速率限制
-- 若吞吐量不足，提供 Redis 佇列或分散式 worker 建議
+- 若吞吐量不足，提供 Redis 佇列、分散式 worker 或多個 crawler instance 建議
 """
 
 import argparse
@@ -176,7 +176,9 @@ async def main() -> None:
     )
 
     if throughput < args.min_throughput:
-        logger.warning("吞吐量不足，建議評估改採 Redis 佇列或分散式 worker")
+        logger.warning(
+            "吞吐量不足，建議評估改採 Redis 佇列、分散式 worker 或分批啟動多個 crawler instance"
+        )
     else:
         logger.info("吞吐量良好")
 
