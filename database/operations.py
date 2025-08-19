@@ -147,7 +147,7 @@ class DatabaseOperations:
         params = [status.value, datetime.now()]
         if status == CrawlStatus.CRAWLING:
             fields.append("crawl_attempts = crawl_attempts + 1")
-        if status in (CrawlStatus.COMPLETED, CrawlStatus.ERROR):
+        if status in (CrawlStatus.COMPLETED, CrawlStatus.ERROR, CrawlStatus.CRAWLED):
             fields.append("last_crawl_at=%s")
             params.append(datetime.now())
         if error_message and status == CrawlStatus.ERROR:
@@ -161,6 +161,42 @@ class DatabaseOperations:
         except Exception as e:
             logger.error(f"更新 URL 狀態失敗: {e}")
             return False
+
+    # --------- 原始頁面與嵌入操作 ---------
+    def insert_raw_page(self, url_id: str, content: str) -> bool:
+        """寫入原始頁面內容"""
+        sql = (
+            """
+            INSERT INTO raw_pages (url_id, content, created_at)
+            VALUES (%s, %s, %s)
+            ON CONFLICT (url_id) DO UPDATE SET content=EXCLUDED.content, updated_at=EXCLUDED.created_at
+            """
+        )
+        params = (url_id, content, datetime.now())
+        try:
+            self.client.execute_query(sql, params, fetch=False)
+            return True
+        except Exception as e:
+            logger.error(f"寫入原始頁面失敗: {e}")
+            return False
+
+    def insert_embeddings(self, url_id: str, texts: List[str], embeddings: List[List[float]]) -> int:
+        """批量寫入分塊嵌入"""
+        sql = (
+            """
+            INSERT INTO embeddings (url_id, chunk_index, content, embedding, created_at)
+            VALUES (%s, %s, %s, %s, %s)
+            """
+        )
+        count = 0
+        for idx, (text, emb) in enumerate(zip(texts, embeddings)):
+            params = (url_id, idx, text, emb, datetime.now())
+            try:
+                self.client.execute_query(sql, params, fetch=False)
+                count += 1
+            except Exception as e:
+                logger.error(f"寫入嵌入失敗: {e}")
+        return count
 
     def url_exists(self, url: str) -> bool:
         """檢查 URL 是否已存在於 sitemaps 或 discovered_urls"""

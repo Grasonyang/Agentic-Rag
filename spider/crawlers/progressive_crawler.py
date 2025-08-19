@@ -15,6 +15,10 @@ from spider.utils.enhanced_logger import get_spider_logger
 from spider.utils.rate_limiter import AdaptiveRateLimiter, RateLimiter
 from .url_scheduler import URLScheduler
 from .robots_handler import fetch_and_parse, get_crawl_delay
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:  # pragma: no cover
+    from spider.workers.chunk_embed_worker import ChunkEmbedWorker
 
 
 class ProgressiveCrawler:
@@ -28,6 +32,7 @@ class ProgressiveCrawler:
         rate_limiter: Optional[RateLimiter] = None,
         batch_size: int = 10,
         concurrency: int = 5,
+        embed_worker: Optional["ChunkEmbedWorker"] = None,
     ) -> None:
         """初始化爬蟲
 
@@ -55,16 +60,15 @@ class ProgressiveCrawler:
         self.batch_size = batch_size
         self.concurrency = concurrency
         self.logger = get_spider_logger("progressive_crawler")
+        self.embed_worker = embed_worker
 
-    async def _fetch_with_retry(self, url: str) -> None:
+    async def _fetch_with_retry(self, url: str) -> str:
         """使用 RetryManager 進行帶退避的抓取"""
         attempt = 0
         while True:
             try:
                 response = await self.connection_manager.get(url)
-                # 讀取內容以確保請求完成
-                await response.text()
-                return
+                return await response.text()
             except Exception as e:  # noqa: BLE001
                 if self.retry_manager.should_retry(e, attempt):
                     delay = self.retry_manager.calculate_delay(attempt)
@@ -81,8 +85,18 @@ class ProgressiveCrawler:
         """處理單一 URL"""
         await self.scheduler.update_status(url_model.id, CrawlStatus.CRAWLING)
         try:
-            await self._fetch_with_retry(url_model.url)
-            await self.scheduler.update_status(url_model.id, CrawlStatus.COMPLETED)
+            content = await self._fetch_with_retry(url_model.url)
+            if hasattr(self.scheduler, "db_manager") and hasattr(
+                self.scheduler.db_manager, "insert_raw_page"
+            ):
+                await self.scheduler.db_manager.insert_raw_page(url_model.id, content)
+            await self.scheduler.update_status(url_model.id, CrawlStatus.CRAWLED)
+            if self.embed_worker:
+                task = asyncio.create_task(
+                    self.embed_worker.process(url_model.id, content)
+                )
+                self.embed_worker.tasks.add(task)
+                task.add_done_callback(self.embed_worker.tasks.discard)
         except Exception as e:  # noqa: BLE001
             # 更新為錯誤狀態
             await self.scheduler.update_status(
